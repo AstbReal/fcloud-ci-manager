@@ -249,23 +249,47 @@
             >
               <el-option v-for="e in envs" :key="e.id" :label="e.name" :value="e.id" />
             </el-select>
-            <el-upload
-              :show-file-list="false"
-              :before-upload="beforeUpload"
-              :disabled="!fileEnvId"
-            >
-              <el-button
-                size="small"
-                :icon="Upload"
-                :disabled="!fileEnvId"
-                :title="`单文件 ≤ ${MAX_FILE_MB}MB，单模块合计 ≤ 500MB`"
-              >
-                上传
-              </el-button>
-            </el-upload>
           </div>
         </div>
-        <div class="file-list">
+        <div
+          class="file-list"
+          :class="{ 'drop-on': dragActive }"
+          @dragenter.prevent="onDragEnter"
+          @dragover.prevent
+          @dragleave="onDragLeave"
+          @drop.prevent="onDropFiles"
+        >
+          <input
+            ref="fileInputRef"
+            type="file"
+            multiple
+            hidden
+            @change="onPickFiles"
+          />
+
+          <!-- 拖拽和点击共用同一个入口 -->
+          <button
+            type="button"
+            class="drop-zone"
+            :class="{ 'is-empty': !files.length }"
+            :disabled="!fileEnvId"
+            :title="`可多选 · 单文件 ≤ ${MAX_FILE_MB}MB，单模块合计 ≤ 500MB`"
+            @click="openFilePicker"
+          >
+            <template v-if="fileEnvId">
+              <template v-if="files.length">
+                <el-icon :size="14"><Upload /></el-icon>
+                <span>拖拽文件到这里，或点击选择（可多选）</span>
+              </template>
+              <template v-else>
+                <el-icon :size="18"><Upload /></el-icon>
+                <span class="dz-t">拖拽文件到这里，或点击选择</span>
+                <span class="dz-s">支持一次多选 · 单文件 ≤ {{ MAX_FILE_MB }}MB</span>
+              </template>
+            </template>
+            <span v-else>先给模块绑定环境</span>
+          </button>
+
           <div v-for="f in files" :key="f.id" class="file-row">
             <span class="file-ic"><el-icon :size="13"><Document /></el-icon></span>
             <div class="file-main" title="点击预览" @click="openPreview(f)">
@@ -278,12 +302,16 @@
               <button v-if="isAdmin" class="danger" @click="deleteFile(f)">删除</button>
             </div>
           </div>
-          <div v-if="!files.length" class="panel-empty">
-            {{ fileEnvId ? '该环境还没有文件，上传后流水线可下载。' : '先给模块绑定环境' }}
+          <div v-if="dragActive" class="drop-layer">
+            <div class="drop-box">
+              <el-icon :size="18"><Upload /></el-icon>
+              <div class="drop-t">松手，上传到 <b>{{ fileEnvName }}</b></div>
+              <div class="drop-s">可一次拖入多个文件 · 单文件 ≤ {{ MAX_FILE_MB }}MB</div>
+            </div>
           </div>
         </div>
         <div class="panel-foot">
-          单文件 ≤ {{ MAX_FILE_MB }}MB · 同名上传生成新版本，保留最近 3 个
+          可拖拽或多选 · 单文件 ≤ {{ MAX_FILE_MB }}MB · 同名上传生成新版本，保留最近 3 个
         </div>
       </section>
 
@@ -587,37 +615,67 @@
       @saved="loadFiles"
     />
 
-    <!-- 上传：先确认备注 -->
-    <el-dialog v-model="uploadDialog" title="上传文件" width="460px">
+    <!-- 上传：先确认每个文件的备注 -->
+    <el-dialog
+      v-model="uploadDialog"
+      :title="pendingFiles.length > 1 ? `上传 ${pendingFiles.length} 个文件` : '上传文件'"
+      width="580px"
+      :close-on-click-modal="!uploading"
+      :close-on-press-escape="!uploading"
+      :show-close="!uploading"
+    >
       <div class="up-form">
-        <div class="fld">
-          <span class="fld-lb">文件</span>
-          <div class="up-file">
-            <span class="mono up-name">{{ pendingFile?.name }}</span>
-            <span class="up-size">{{ formatSize(pendingFile?.size) }}</span>
+        <div class="up-meta">
+          目标环境 <b>{{ fileEnvName }}</b>
+          <span v-if="uploading" class="up-progress">· 正在上传 {{ uploadDone }}/{{ pendingFiles.length }}</span>
+        </div>
+
+        <div class="up-list">
+          <div
+            v-for="p in pendingFiles"
+            :key="p.uid"
+            class="up-row"
+            :class="{ failed: !!p.error }"
+          >
+            <div class="up-row-main">
+              <div class="up-row-name mono" :title="p.file.name">{{ p.file.name }}</div>
+              <div class="up-row-sub">
+                <span>{{ formatSize(p.file.size) }}</span>
+                <span v-if="p.error" class="up-err">{{ p.error }}</span>
+                <span v-else class="up-ver">将生成 v{{ p.version }}</span>
+              </div>
+            </div>
+            <el-input
+              v-model="p.remark"
+              size="small"
+              class="up-remark"
+              placeholder="备注（这次改了什么）"
+              :disabled="uploading"
+            />
+            <button
+              v-if="!uploading"
+              class="up-del"
+              title="从列表移除"
+              @click="removePending(p.uid)"
+            >
+              移除
+            </button>
           </div>
         </div>
-        <div class="fld">
-          <span class="fld-lb">
-            备注
-            <span class="fld-opt">会显示在文件列表里，方便日后回看</span>
-          </span>
-          <el-input v-model="uploadRemark" placeholder="这次改了什么" />
-        </div>
+
         <div class="up-tip">
-          <template v-if="uploadNextVersion > 1">
-            同名文件已存在，本次会生成 <b>v{{ uploadNextVersion }}</b>
-          </template>
-          <template v-else>
-            将创建 <b>v1</b>
-          </template>
-          · 每个文件保留最近 3 个版本
+          共 {{ pendingFiles.length }} 个文件 · {{ formatSize(pendingTotalSize) }}
+          · 同名文件逐个生成新版本，每个文件保留最近 3 个
         </div>
       </div>
       <template #footer>
-        <button class="btn" @click="uploadDialog = false">取消</button>
-        <button class="btn btn-primary" :disabled="savingUpload" @click="confirmUpload">
-          {{ savingUpload ? '上传中…' : '上传' }}
+        <button class="btn" :disabled="uploading" @click="closeUploadDialog">取消</button>
+        <button
+          class="btn btn-primary"
+          :disabled="uploading || !pendingFiles.length"
+          @click="confirmUpload"
+        >
+          {{ uploading ? `上传中 ${uploadDone}/${pendingFiles.length}` : `上传 ${pendingFiles.length} 个文件` }}
         </button>
       </template>
     </el-dialog>
@@ -681,6 +739,14 @@ interface FileItem {
   remark?: string
   currentVersion: number
 }
+/** 待上传队列项：一个文件一条，备注与版本各自独立 */
+interface PendingUpload {
+  uid: number
+  file: File
+  remark: string
+  version: number
+  error?: string
+}
 interface DiffChanged {
   varKey: string
   template: { valueType: string; remark?: string; isRequired: boolean }
@@ -731,9 +797,17 @@ const previewFile = ref<{
   currentVersion: number
 } | null>(null)
 const uploadDialog = ref(false)
-const pendingFile = ref<File | null>(null)
-const uploadRemark = ref('')
-const savingUpload = ref(false)
+const pendingFiles = ref<PendingUpload[]>([])
+const uploading = ref(false)
+const uploadDone = ref(0)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const dragActive = ref(false)
+let dragDepth = 0
+let pendingSeq = 0
+
+const pendingTotalSize = computed(() =>
+  pendingFiles.value.reduce((sum, p) => sum + p.file.size, 0)
+)
 
 const varDrawer = ref(false)
 const importDrawer = ref(false)
@@ -1286,55 +1360,171 @@ async function doSync() {
 
 // ---- 文件 ----
 const MAX_FILE_MB = 50
+/** 单模块文件总量上限，与后端 FileService 保持一致 */
+const MAX_MODULE_TOTAL_MB = 500
 
 const fileEnvName = computed(
   () => envs.value.find((e) => String(e.id) === String(fileEnvId.value))?.name || ''
 )
 
-const uploadNextVersion = computed(() => {
-  const f = pendingFile.value
-  if (!f) return 1
-  const same = files.value.find((x) => x.fileKey === f.name)
-  return same ? (same.currentVersion || 0) + 1 : 1
-})
-
-/** 选了文件先不传，弹窗确认备注后再上传 */
-function beforeUpload(file: File) {
-  if (!fileEnvId.value) return false
-  if (file.size > MAX_FILE_MB * 1024 * 1024) {
-    ElMessage.error(
-      `单文件不能超过 ${MAX_FILE_MB}MB（当前 ${(file.size / 1048576).toFixed(1)}MB）`
-    )
-    return false
-  }
-  pendingFile.value = file
-  uploadRemark.value = `手工上传 · ${new Date().toLocaleString('zh-CN', {
-    hour12: false
-  })}`
-  uploadDialog.value = true
-  return false
+function defaultUploadRemark() {
+  return `手工上传 · ${new Date().toLocaleString('zh-CN', { hour12: false })}`
 }
 
-async function confirmUpload() {
-  const file = pendingFile.value
-  if (!file) return
-  savingUpload.value = true
-  try {
-    const form = new FormData()
-    form.append('file', file)
-    form.append('fileKey', file.name)
-    form.append('environmentId', String(fileEnvId.value))
-    form.append('remark', uploadRemark.value.trim())
-    await api.upload(`/api/console/modules/${moduleId.value}/files`, form)
-    ElMessage.success(`已上传，当前版本 v${uploadNextVersion.value}`)
-    uploadDialog.value = false
-    pendingFile.value = null
-    await loadFiles()
-  } catch {
-    // 已提示
-  } finally {
-    savingUpload.value = false
+/** 同一批里重复拖入同名文件要顺延版本号，否则两个都算成 v4 */
+function nextVersionFor(name: string) {
+  const existing = files.value.find((x) => x.fileKey === name)?.currentVersion || 0
+  const queued = pendingFiles.value.filter((p) => p.file.name === name).length
+  return existing + queued + 1
+}
+
+function openFilePicker() {
+  if (!fileEnvId.value) {
+    ElMessage.warning('先选择环境再上传')
+    return
   }
+  fileInputRef.value?.click()
+}
+
+function onPickFiles(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (input.files?.length) addFiles(input.files)
+  // 清空，保证同一个文件再次选择仍触发 change
+  input.value = ''
+}
+
+/** 入队前统一校验，校验通过再弹确认框 */
+function addFiles(list: FileList | File[]) {
+  if (!fileEnvId.value) {
+    ElMessage.warning('先选择环境再上传')
+    return
+  }
+  const incoming = Array.from(list)
+  if (!incoming.length) return
+
+  const tooBig: string[] = []
+  const duplicated: string[] = []
+  let added = 0
+
+  for (const file of incoming) {
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      tooBig.push(`${file.name}（${formatSize(file.size)}）`)
+      continue
+    }
+    const exists = pendingFiles.value.some(
+      (p) =>
+        p.file.name === file.name &&
+        p.file.size === file.size &&
+        p.file.lastModified === file.lastModified
+    )
+    if (exists) {
+      duplicated.push(file.name)
+      continue
+    }
+    if (pendingTotalSize.value + file.size > MAX_MODULE_TOTAL_MB * 1024 * 1024) {
+      ElMessage.error(`这一批已超过单模块 ${MAX_MODULE_TOTAL_MB}MB 上限，后面的文件没有加入`)
+      break
+    }
+    pendingFiles.value.push({
+      uid: ++pendingSeq,
+      file,
+      remark: defaultUploadRemark(),
+      version: nextVersionFor(file.name)
+    })
+    added++
+  }
+
+  if (tooBig.length) {
+    ElMessage.error(`单文件不能超过 ${MAX_FILE_MB}MB：${tooBig.join('、')}`)
+  }
+  if (duplicated.length) {
+    ElMessage.warning(`已在待上传列表里，已忽略：${duplicated.join('、')}`)
+  }
+  if (added) uploadDialog.value = true
+}
+
+function removePending(uid: number) {
+  pendingFiles.value = pendingFiles.value.filter((p) => p.uid !== uid)
+  if (!pendingFiles.value.length) uploadDialog.value = false
+}
+
+function closeUploadDialog() {
+  if (uploading.value) return
+  uploadDialog.value = false
+  pendingFiles.value = []
+}
+
+/** 逐个串行上传：失败不打断队列，避免同一 fileKey 的版本号撞车 */
+async function confirmUpload() {
+  if (uploading.value || !pendingFiles.value.length) return
+  const envId = String(fileEnvId.value)
+  uploading.value = true
+  uploadDone.value = 0
+  let ok = 0
+  for (const item of [...pendingFiles.value]) {
+    item.error = ''
+    try {
+      const form = new FormData()
+      form.append('file', item.file)
+      form.append('fileKey', item.file.name)
+      form.append('environmentId', envId)
+      form.append('remark', (item.remark || '').trim())
+      await api.upload(`/api/console/modules/${moduleId.value}/files`, form)
+      pendingFiles.value = pendingFiles.value.filter((p) => p.uid !== item.uid)
+      ok++
+    } catch (err) {
+      item.error = err instanceof Error && err.message ? err.message : '上传失败'
+      // 失败项版本号可能因前面的成功项变化，重算一次
+      item.version = nextVersionFor(item.file.name)
+    } finally {
+      uploadDone.value++
+    }
+  }
+  uploading.value = false
+  await loadFiles()
+  if (!pendingFiles.value.length) {
+    uploadDialog.value = false
+    ElMessage.success(`已上传 ${ok} 个文件`)
+  } else {
+    ElMessage.error(`${ok} 个成功，${pendingFiles.value.length} 个失败，可修正后重试`)
+  }
+}
+
+// ---- 拖拽上传：整块文件列表就是投放区 ----
+function isFileDrag(e: DragEvent) {
+  return Array.from(e.dataTransfer?.types || []).includes('Files')
+}
+
+function onDragEnter(e: DragEvent) {
+  // 表格行排序也是 drag，只认带 Files 的拖拽
+  if (!isFileDrag(e) || !fileEnvId.value) return
+  dragDepth++
+  dragActive.value = true
+}
+
+function onDragLeave(e: DragEvent) {
+  // 拖出窗口时不一定会成对触发 dragleave，relateTarget 为空直接收摊
+  if (!e.relatedTarget) {
+    resetDrag()
+    return
+  }
+  if (!isFileDrag(e)) return
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (!dragDepth) dragActive.value = false
+}
+
+function resetDrag() {
+  dragDepth = 0
+  dragActive.value = false
+}
+
+function onDropFiles(e: DragEvent) {
+  resetDrag()
+  if (!fileEnvId.value) {
+    ElMessage.warning('先选择环境再上传')
+    return
+  }
+  if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files)
 }
 
 function openPreview(row: FileItem) {
@@ -1391,6 +1581,9 @@ watch(moduleId, async (id, old) => {
 
 onMounted(async () => {
   document.addEventListener('keydown', onGlobalKey)
+  // 兜底：拖到窗口外松手，容器收不到 drop，靠全局事件清掉遮罩
+  document.addEventListener('dragend', resetDrag)
+  document.addEventListener('drop', resetDrag)
   try {
     allEnvs.value = await envApi.list()
   } catch {
@@ -1404,6 +1597,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onGlobalKey)
+  document.removeEventListener('dragend', resetDrag)
+  document.removeEventListener('drop', resetDrag)
 })
 </script>
 
@@ -1844,6 +2039,110 @@ onBeforeUnmount(() => {
   padding: 6px;
 }
 
+.file-list {
+  position: relative;
+  min-height: 88px;
+  transition: background 0.12s;
+}
+
+.file-list.drop-on {
+  background: var(--primary-50);
+}
+
+.drop-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    background 0.12s,
+    color 0.12s;
+}
+
+.drop-zone:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--primary-50);
+  color: var(--primary);
+}
+
+.drop-zone:focus-visible {
+  outline: 2px solid var(--primary-100);
+  outline-offset: 1px;
+}
+
+.drop-zone:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.drop-zone.is-empty {
+  flex-direction: column;
+  gap: 3px;
+  padding: 20px 12px;
+}
+
+.drop-zone:hover:not(:disabled) .dz-t {
+  color: var(--primary);
+}
+
+.drop-zone + .file-row {
+  margin-top: 2px;
+}
+
+.dz-t {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.dz-s {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.drop-layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 1.5px dashed var(--primary);
+  border-radius: var(--r-sm);
+  background: rgba(239, 244, 255, 0.86);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.drop-box {
+  text-align: center;
+  color: var(--primary-700);
+}
+
+.drop-t {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.drop-t b {
+  color: var(--primary-700);
+}
+
+.drop-s {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
 .file-row,
 .member-row {
   display: flex;
@@ -1948,34 +2247,93 @@ onBeforeUnmount(() => {
 .up-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
-.up-file {
+.up-meta {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.up-meta b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.up-progress {
+  color: var(--primary);
+}
+
+.up-list {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.up-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px auto;
   align-items: center;
   gap: 8px;
-  height: 34px;
-  padding: 0 10px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: var(--surface-2);
-  font-size: 12.5px;
 }
 
-.up-name {
-  flex: 1;
+.up-row.failed {
+  border-color: #fecaca;
+  background: var(--danger-50);
+}
+
+.up-row-main {
   min-width: 0;
+}
+
+.up-row-name {
+  font-size: 12.5px;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text);
 }
 
-.up-size {
-  flex: 0 0 auto;
+.up-row-sub {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 11px;
   color: var(--text-3);
+  min-width: 0;
+}
+
+.up-ver {
+  color: var(--primary);
+}
+
+.up-err {
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.up-del {
+  border: 0;
+  background: none;
+  padding: 2px 6px;
+  border-radius: 4px;
   font-size: 11.5px;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.up-del:hover {
+  background: var(--surface-3);
+  color: var(--danger);
 }
 
 .up-tip {
