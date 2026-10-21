@@ -725,22 +725,24 @@ files/            # 全部文件版本二进制，路径 {moduleId}/{fileId}/v{n
 
 ```
 fcloud-ci-hub/
-├── build.gradle                 # Spring Boot 2.7.17，Java 17
-├── settings.gradle
-├── src/main/java/ci/fcloud/hub/
-│   ├── FcloudCiHubApplication.java
-│   ├── config/                  # Security/OAuth2/Redis/Web/OpenAPI/Properties
-│   ├── common/                  # ApiResponse/异常/Crypto/Audited 注解
-│   ├── auth/                    # JWT/Cookie/OAuth SuccessHandler
-│   ├── user/ env/ app/ module/ template/ token/
-│   ├── pipeline/                # 流水线 API + Token 过滤器 + 限流 + 访问日志
-│   ├── audit/                   # 审计切面 + 查询 + 清理
-│   └── backup/                  # 导出/恢复/定时任务
-├── src/main/resources/
-│   ├── application.yml
-│   ├── db/migration/V1__init.sql
-│   └── static/                  # 前端构建产物（构建时拷入）
-├── frontend/                    # Vue3 + Vite + TS
+├── backend/                     # 后端工程（独立 Gradle 根）
+│   ├── build.gradle             # Spring Boot 2.7.17，Java 17
+│   ├── settings.gradle
+│   ├── gradlew / gradlew.bat
+│   ├── src/main/java/ci/fcloud/hub/
+│   │   ├── FcloudCiHubApplication.java
+│   │   ├── config/              # Security/OAuth2/Redis/Web/OpenAPI/Properties
+│   │   ├── common/              # ApiResponse/异常/Crypto/Audited 注解
+│   │   ├── auth/                # JWT/Cookie/OAuth SuccessHandler
+│   │   ├── user/ env/ app/ module/ template/ token/
+│   │   ├── pipeline/            # 流水线 API + Token 过滤器 + 限流 + 访问日志
+│   │   ├── audit/               # 审计切面 + 查询 + 清理
+│   │   └── backup/              # 导出/恢复/定时任务
+│   └── src/main/resources/
+│       ├── application.yml
+│       ├── db/migration/V1__init.sql
+│       └── static/              # 前端构建产物（仅 -PwithFrontend 时拷入）
+├── frontend/                    # 前端工程（Vue3 + Vite + TS）
 ├── deploy/
 │   ├── Dockerfile               # 单镜像（多阶段）
 │   ├── supervisord.conf

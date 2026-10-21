@@ -35,24 +35,25 @@
 
 ```
 fcloud-ci-hub/
-├── build.gradle                 # Spring Boot 2.7.17，Java 17
-├── settings.gradle
-├── gradlew / gradlew.bat        # Gradle 7.5.1 wrapper（已锁定版本）
-├── src/main/java/ci/fcloud/hub/
-│   ├── FcloudCiHubApplication.java
-│   ├── config/                  # Security/OAuth2/Redis/Web/OpenAPI/Properties
-│   ├── common/                  # ApiResponse/异常/Crypto/Audited 注解
-│   ├── auth/                    # JWT/Cookie/OAuth SuccessHandler
-│   ├── user/ env/ app/ module/ template/ token/
-│   ├── pipeline/                # 流水线 API + Token 过滤器 + 限流 + 访问日志
-│   ├── mcp/                     # MCP Server（协议层 + 14 个工具）
-│   ├── pat/                     # AI 客户端访问令牌（绑定用户 + scope）
-│   ├── audit/                   # 审计切面 + 查询 + 清理
-│   └── backup/                  # 导出/恢复/定时任务
-├── src/main/resources/
-│   ├── application.yml
-│   └── db/migration/V1__init.sql … V5__mcp_pat.sql
-├── frontend/                    # Vue3 + Vite + TS
+├── backend/                     # 后端（Spring Boot 单模块 Gradle 工程）
+│   ├── build.gradle             # Spring Boot 2.7.17，Java 17
+│   ├── settings.gradle
+│   ├── gradlew / gradlew.bat    # Gradle 7.5.1 wrapper（已锁定版本）
+│   ├── src/main/java/ci/fcloud/hub/
+│   │   ├── FcloudCiHubApplication.java
+│   │   ├── config/              # Security/OAuth2/Redis/Web/OpenAPI/Properties
+│   │   ├── common/              # ApiResponse/异常/Crypto/Audited 注解
+│   │   ├── auth/                # JWT/Cookie/OAuth SuccessHandler
+│   │   ├── user/ env/ app/ module/ template/ token/
+│   │   ├── pipeline/            # 流水线 API + Token 过滤器 + 限流 + 访问日志
+│   │   ├── mcp/                 # MCP Server（协议层 + 14 个工具）
+│   │   ├── pat/                 # AI 客户端访问令牌（绑定用户 + scope）
+│   │   ├── audit/               # 审计切面 + 查询 + 清理
+│   │   └── backup/              # 导出/恢复/定时任务
+│   └── src/main/resources/
+│       ├── application.yml
+│       └── db/migration/V1__init.sql … V5__mcp_pat.sql
+├── frontend/                    # 前端（Vue3 + Vite + TS）
 ├── deploy/
 │   ├── Dockerfile
 │   ├── supervisord.conf
@@ -74,12 +75,12 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 ```
 
 > 本机 Docker 在 WSL2 中，PG/Redis 跑在 WSL 的容器里；
-> 后端用 Windows 的 `gradlew` 启动，通过 WSL IP 访问。详见 §7。
+> 后端用 Windows 的 `backend/gradlew` 启动，通过 WSL IP 访问。详见 §7。
 
 ### 3.2 启动后端
 
 ```bash
-./gradlew bootRun
+cd backend && ./gradlew bootRun
 ```
 
 ### 3.3 启动前端
@@ -203,8 +204,8 @@ gitlab-lite 实现的端点（与真实 GitLab 契约一致）：
 
 ### M1 验证记录
 
-- `./gradlew compileJava` → BUILD SUCCESSFUL（Gradle 7.5.1，Java 17）
-- `./gradlew bootRun` → `Started FcloudCiHubApplication in 3.568 seconds`
+- `./backend/gradlew -p backend compileJava` → BUILD SUCCESSFUL（Gradle 7.5.1，Java 17）
+- `./backend/gradlew -p backend bootRun` → `Started FcloudCiHubApplication in 3.568 seconds`
 - Flyway → `Successfully validated 1 migration`，`Schema "public" is up to date`
 - 数据库表 → 17 张业务表 + `fch_flyway_schema_history` 全部创建（version=1, success=t）
 - actuator → `/actuator/health` 返回 200
@@ -589,7 +590,7 @@ SHARED_URL=https://v2.internal
 
 ## 9. 单元测试
 
-`./gradlew test` → **55 tests, 0 failures**：
+`./backend/gradlew -p backend test` → **55 tests, 0 failures**：
 
 | 测试类 | 用例数 | 覆盖 |
 | --- | ---: | --- |
@@ -649,7 +650,7 @@ vmIdleTimeout=3600000
 ### 10.2 Docker 与后端分处两处
 
 - PostgreSQL 16 / Redis 7 运行在 **WSL 的 Docker** 中（`deploy/docker-compose.dev.yml`）。
-- 后端 Spring Boot 用 **Windows 的 `gradlew bootRun`** 启动，
+- 后端 Spring Boot 用 **Windows 的 `backend/gradlew -p backend bootRun`** 启动，
   通过 `FCLOUD_DB_HOST=172.29.214.70`（WSL IP）访问容器内的 PG/Redis。
 - **所有脚本统一用 Git Bash 执行**（`D:\Tools\Git\bin\bash.exe`），不用 PowerShell 拼脚本：
 

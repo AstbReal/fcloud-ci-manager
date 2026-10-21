@@ -33,7 +33,7 @@ wsl -e bash -c "cd /mnt/d/code/fcloud-ci-hub/deploy/gitlab-lite && docker compos
 ### 方式 A：bootRun（推荐本地开发）
 
 ```bash
-cd D:/code/fcloud-ci-hub
+cd D:/code/fcloud-ci-hub/backend
 ./gradlew bootRun --args='--server.port=8080 --fcloud.jwt.secret=0123456789abcdef0123456789abcdef0123456789'
 ```
 
@@ -43,6 +43,7 @@ cd D:/code/fcloud-ci-hub
 ### 方式 B：java -jar
 
 ```bash
+cd D:/code/fcloud-ci-hub/backend
 ./gradlew bootJar -x test
 env -u SERVER__PORT FCLOUD_JWT_SECRET=0123456789abcdef0123456789abcdef0123456789 java -jar build/libs/fcloud-ci-hub-1.0.0.jar
 ```

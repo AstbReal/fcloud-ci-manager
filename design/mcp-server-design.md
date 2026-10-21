@@ -346,7 +346,7 @@ http.addFilterBefore(mcpAuthFilter, UsernamePasswordAuthenticationFilter.class);
 ### 7.1 新增包
 
 ```
-src/main/java/ci/fcloud/hub/mcp/
+backend/src/main/java/ci/fcloud/hub/mcp/
 ├── McpController.java          # POST/GET/DELETE /mcp，写响应
 ├── McpAuthFilter.java          # Bearer PAT → SecurityContext（§4.4）
 ├── McpSessionStore.java        # 会话 Map + TTL 清理
@@ -606,7 +606,7 @@ stdin(JSON-RPC) → POST http://hub/mcp（透传 Authorization、Mcp-Session-Id�
 ### 11.1 已落地文件
 
 ```
-src/main/java/ci/fcloud/hub/mcp/
+backend/src/main/java/ci/fcloud/hub/mcp/
 ├── McpController.java          POST/GET/DELETE /mcp；JSON 与 SSE 双形态
 ├── McpAuthFilter.java          Bearer 鉴权 + 限流 + 主体注入
 ├── McpPrincipal.java           USER / MACHINE 两类主体
@@ -624,12 +624,12 @@ src/main/java/ci/fcloud/hub/mcp/
     ├── ToolRegistry.java      按 scope + 三类开关过滤
     └── impl/                  8 只读 + 5 写 + 1 明文 = 14 个工具
 
-src/main/java/ci/fcloud/hub/pat/
+backend/src/main/java/ci/fcloud/hub/pat/
 ├── Pat.java / PatMapper.java
 ├── PatService.java            签发 / 校验 / 吊销 / 列表（Redis 缓存 5min）
 └── PatController.java         /api/console/pat
 
-src/main/java/ci/fcloud/hub/module/VariableImportService.java
+backend/src/main/java/ci/fcloud/hub/module/VariableImportService.java
                                 dotenv 导入（console 与 MCP 共用，支持 dryRun）
 ```
 
@@ -699,7 +699,7 @@ src/main/java/ci/fcloud/hub/module/VariableImportService.java
 
 ```bash
 # 只读（默认）
-env -u SERVER__PORT java -jar build/libs/fcloud-ci-hub-1.0.0.jar \
+env -u SERVER__PORT java -jar backend/build/libs/fcloud-ci-hub-1.0.0.jar \
   --server.port=18080 --fcloud.jwt.secret=<32+字符>
 
 # 需要写工具 / 明文时再显式打开（生产默认全关）

@@ -1,4 +1,6 @@
 # 构建与测试产物
+backend/build/
+backend/.gradle/
 build/
 .gradle/
 frontend/node_modules/
@@ -36,4 +38,4 @@ Thumbs.db
 /-b
 
 # 旧的前端构建产物被拷进了源码目录（build.gradle 实际写到 build/resources/main/static）
-src/main/resources/static/
+backend/src/main/resources/static/

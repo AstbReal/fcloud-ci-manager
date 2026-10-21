@@ -30,10 +30,11 @@ mkdir -p deploy/frontend-dist
 cp -r frontend/dist/. deploy/frontend-dist/
 
 echo "==> [3/4] 构建后端 jar（Gradle 7.5.1）"
-./gradlew clean bootJar -x test
+./backend/gradlew -p backend clean bootJar -x test
 
 echo "==> [4/4] 构建 Docker 镜像 ${TAG}"
-wsl -e bash -lc "cd /mnt/d/deskbox/其他/Code/fcloud-ci-hub && docker build -f deploy/Dockerfile -t ${TAG} ."
+REPO_WSL="$(wsl -e wslpath -a "$(pwd)" 2>/dev/null || wslpath -a "$(pwd)")"
+wsl -e bash -lc "cd '${REPO_WSL}' && docker build -f deploy/Dockerfile -t ${TAG} ."
 
 echo "==> 完成：${TAG}"
 wsl -e bash -lc "docker images ${TAG%%:*} --format '{{.Repository}}:{{.Tag}}  {{.Size}}'"

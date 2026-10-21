@@ -77,7 +77,8 @@ def withFrontend = project.hasProperty('withFrontend')
 
 tasks.register('copyFrontend', Copy) {
     onlyIf { withFrontend }
-    from "${rootDir}/frontend/dist"
+    // 前端与后端同级：仓库根/frontend；本模块在 仓库根/backend
+    from "${rootDir}/../frontend/dist"
     into "${buildDir}/resources/main/static"
 }
 

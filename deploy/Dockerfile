@@ -61,7 +61,7 @@ RUN chmod +x /usr/local/bin/redis-server /usr/local/bin/redis-cli \
 
 # ---- 应用 ----
 WORKDIR /app
-COPY build/libs/fcloud-ci-hub-1.0.0.jar /app/app.jar
+COPY backend/build/libs/fcloud-ci-hub-1.0.0.jar /app/app.jar
 COPY deploy/frontend-dist /app/static
 
 # ---- 配置与脚本 ----

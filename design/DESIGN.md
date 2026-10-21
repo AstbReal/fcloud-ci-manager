@@ -324,10 +324,10 @@ REDIS_HOST  [test]                    继承链
 | `frontend/src/router/index.ts` | `modules/:id` 保留 query，路由守卫不得清掉 `env/var` |
 | `frontend/src/views/PipelineDocs.vue` | 代码块 `white-space:pre` + 深色底 |
 | `frontend/src/types/id.ts` | 新增：`Id = string \| number`，领域 ID 统一类型 |
-| `src/main/java/.../config/JacksonConfig.java` | 新增：`Long` 一律序列化为字符串 |
-| `src/main/java/.../module/VariableController.java` | 矩阵永不下发明文；新增 `/{varId}/chain` |
-| `src/main/java/.../app/BoardController.java` | 看板接口返回 `health{missingRequired,templatePending}` 与订阅计数 |
-| `src/main/java/.../app/DashboardController.java` | 待办补充 `recentModules` |
+| `backend/src/main/java/.../config/JacksonConfig.java` | 新增：`Long` 一律序列化为字符串 |
+| `backend/src/main/java/.../module/VariableController.java` | 矩阵永不下发明文；新增 `/{varId}/chain` |
+| `backend/src/main/java/.../app/BoardController.java` | 看板接口返回 `health{missingRequired,templatePending}` 与订阅计数 |
+| `backend/src/main/java/.../app/DashboardController.java` | 待办补充 `recentModules` |
 
 
 ### 5.3 实现中确认的三条硬约束
