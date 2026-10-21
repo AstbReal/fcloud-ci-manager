@@ -1,0 +1,174 @@
+# ============================================================================
+# fcloud-ci-hub nginx 配置模板（§11.2）
+# :8080 对外唯一端口：静态资源 + 反代 /api /oauth /oauth2 /actuator
+# 由 entrypoint.sh 用 envsubst 渲染：${FCLOUD_SERVER_PORT} 取上游 Spring Boot 端口
+# ============================================================================
+
+upstream fcloud_app {
+    server 127.0.0.1:${FCLOUD_SERVER_PORT};
+    keepalive 32;
+}
+
+server {
+    listen 8080;
+    server_name _;
+
+    client_max_body_size 64m;   # 文件上传 ≤50MB，留余量
+
+    # ---- 安全响应头 ----
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Frame-Options SAMEORIGIN;
+    add_header Referrer-Policy no-referrer-when-downgrade;
+
+    # ---- 前端静态资源（构建产物在 app.jar 的 static/ 中，这里指到解包目录）----
+    root /app/static;
+    index index.html;
+
+    # SPA fallback（§11.2）
+    # 注意：显式列出的后端路径必须在 / 之前匹配，否则会被 try_files 吞掉而返回 index.html。
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # ---- 开发/测试用模拟登录入口（仅当应用启用 fcloud.dev-login-enabled 时有效）----
+    # 放在 / 之后亦可：nginx 优先匹配更长的 location 前缀
+    location /dev-login {
+        proxy_pass http://fcloud_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 静态资源长缓存
+    location /assets/ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # ---- MCP（Streamable HTTP，单端点）----
+    # 精确匹配，否则会落到下面的 SPA fallback 拿到 index.html。
+    # 关缓冲：工具结果可能较大，且客户端需要及时收到完整响应。
+    location = /mcp {
+        proxy_pass http://fcloud_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_buffering off;
+    }
+
+    # ---- API 反代 ----
+    location /api/ {
+        proxy_pass http://fcloud_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        # tar.gz 流式下载不要缓冲
+        proxy_buffering off;
+    }
+
+    # ---- OAuth 入口与回调 ----
+    # 关键：proxy_redirect off —— 否则 nginx 会改写 upstream 的 Location，
+    # 导致 OAuth 跳转地址被替换成内部地址或丢失。
+    # X-Forwarded-Host/Port/Proto 让 Spring 用 ForwardedHeaderFilter 还原
+    # 浏览器侧的真实地址，从而生成正确的 redirect_uri（含端口）。
+    location /oauth2/ {
+        proxy_pass http://fcloud_app;
+        proxy_http_version 1.1;
+        proxy_redirect off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+    }
+
+    # Spring 的标准 OAuth 回调路径（OAuth2LoginAuthenticationFilter 监听此路径）。
+    # 必须反代到后端，否则会被 SPA fallback 吞掉。
+    location /login/ {
+        proxy_pass http://fcloud_app;
+        proxy_http_version 1.1;
+        proxy_redirect off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+    }
+
+    # §6.1 对外契约：GET /oauth/gitlab/callback
+    # Spring 内部监听：/login/oauth2/code/gitlab
+    # 这里把对外路径精确重写到内部路径（query 原样保留）。
+    location = /oauth/gitlab/callback {
+        proxy_pass http://fcloud_app/login/oauth2/code/gitlab;
+        proxy_http_version 1.1;
+        proxy_redirect off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+    }
+
+    location /oauth/ {
+        proxy_pass http://fcloud_app;
+        proxy_http_version 1.1;
+        proxy_redirect off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+    }
+
+    # ---- 健康检查与 API 文档 ----
+    location /actuator/ {
+        proxy_pass http://fcloud_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /v3/api-docs {
+        proxy_pass http://fcloud_app;
+        proxy_set_header Host $host;
+    }
+
+    location /swagger-ui {
+        proxy_pass http://fcloud_app;
+        proxy_set_header Host $host;
+    }
+
+    # ---- 本地联调：gitlab-lite 反代到同域 /gitlab 前缀 ----
+    # 目的：让浏览器始终只访问 localhost:8080 一个 origin，
+    #       SameSite=Lax 的 cookie 才能正常发送（见 README D26）。
+    # ${FCLOUD_GITLAB_LITE_HOST} / ${FCLOUD_GITLAB_LITE_PORT} 由 entrypoint.sh
+    # 的 envsubst 替换（默认 127.0.0.1:8929）。
+    location /gitlab/ {
+        proxy_pass http://${FCLOUD_GITLAB_LITE_HOST}:${FCLOUD_GITLAB_LITE_PORT}/;
+        proxy_http_version 1.1;
+        proxy_redirect off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+    }
+}

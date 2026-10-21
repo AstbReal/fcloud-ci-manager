@@ -1,0 +1,111 @@
+plugins {
+    id 'org.springframework.boot' version '2.7.17'
+    id 'io.spring.dependency-management' version '1.1.4'
+    id 'java'
+}
+
+group = 'ci.fcloud.hub'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+dependencies {
+    // Spring Boot starters
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // Persistence: MyBatis-Plus 3.5.3.2 + PostgreSQL + Flyway 9.22.3
+    implementation 'com.baomidou:mybatis-plus-boot-starter:3.5.3.2'
+    runtimeOnly 'org.postgresql:postgresql'
+    implementation 'org.flywaydb:flyway-core:9.22.3'
+
+    // JWT (JJWT 0.11.5)
+    implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
+    // OpenAPI (springdoc-openapi-ui 1.6.15 for Spring Boot 2.7)
+    implementation 'org.springdoc:springdoc-openapi-ui:1.6.15'
+
+    // tar.gz handling
+    implementation 'org.apache.commons:commons-compress:1.25.0'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
+
+    // Test
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 17
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+    }
+}
+
+// 前端构建产物默认不进 jar：本地用 Vite（:5173）跑前端，jar 只提供 API。
+// 需要旧的"单 jar 自带前端"形态时加 -PwithFrontend。
+def withFrontend = project.hasProperty('withFrontend')
+
+tasks.register('copyFrontend', Copy) {
+    onlyIf { withFrontend }
+    from "${rootDir}/frontend/dist"
+    into "${buildDir}/resources/main/static"
+}
+
+// 不带 -PwithFrontend 时清掉上一次构建残留，避免旧前端被打进 jar
+tasks.register('purgeFrontend', Delete) {
+    delete "${buildDir}/resources/main/static"
+}
+
+tasks.named('processResources') {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    // 源码目录里遗留的前端产物永远不进 jar（前端由 Vite / nginx 提供）
+    exclude 'static/**'
+    if (withFrontend) {
+        finalizedBy 'copyFrontend'
+    } else {
+        finalizedBy 'purgeFrontend'
+    }
+}
+
+tasks.named('bootJar') {
+    dependsOn 'copyFrontend'
+}
+
+tasks.named('bootRun') {
+    dependsOn 'copyFrontend'
+}
+
+// 供 SPA fallback 使用：把 index.html 同时供任意前端路由返回
+tasks.named('classes') {
+    dependsOn 'copyFrontend'
+}

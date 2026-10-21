@@ -1,0 +1,42 @@
+# 本地开发依赖：PostgreSQL 16 + Redis 7（§11.5）
+# 用法：docker compose -f deploy/docker-compose.dev.yml up -d
+# 说明：镜像 tag 对齐本机已存在且与生产一致的 16-alpine / 7.2-alpine。
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fcloud-dev-pg
+    environment:
+      POSTGRES_DB: fcloud_ci_hub
+      POSTGRES_USER: fcloud
+      POSTGRES_PASSWORD: fcloud
+      TZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - fcloud-dev-pg:/var/lib/postgresql/data
+    # 本地联调常驻：WSL 休眠后唤醒时自动恢复，避免 exit 255 后手动 start
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fcloud -d fcloud_ci_hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: fcloud-dev-redis
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    ports:
+      - "6379:6379"
+    volumes:
+      - fcloud-dev-redis:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  fcloud-dev-pg:
+  fcloud-dev-redis:

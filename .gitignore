@@ -1,0 +1,39 @@
+# 构建与测试产物
+build/
+.gradle/
+frontend/node_modules/
+frontend/dist/
+deploy/frontend-dist/
+
+# 本地运行时数据
+.dsh-tmp/
+
+# 本地开发数据（含主密钥、文件存储、备份、临时凭证）
+# 千万不要提交：.local-data/master.key 就是加密变量的解密钥匙
+.local-data/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 运行时生成
+/data/
+*.log
+
+# 设计系统 / UI 评审工具产物（含 Playwright 依赖与截图，体积大且可重跑）
+.design-system/
+.ui-review/
+
+# 本地 agent 记忆与临时文件
+.workbuddy/
+
+# 误存的 cookie jar（curl -b 写出的文件名就是 "-b"）
+/-b
+
+# 旧的前端构建产物被拷进了源码目录（build.gradle 实际写到 build/resources/main/static）
+src/main/resources/static/

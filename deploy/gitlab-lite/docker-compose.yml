@@ -1,0 +1,73 @@
+# ============================================================================
+# 本地联调：GitLab Lite（测试用 OAuth2 提供方）+ fcloud-ci-hub
+#
+# 用法：
+#   docker compose -f deploy/gitlab-lite/docker-compose.yml up -d
+#   浏览器打开 http://127.0.0.1:18080 → 自动跳转 GitLab 登录
+#
+# 网络说明：
+#   两个服务在同一个 compose 网络内，用服务名互访：
+#     fcloud-ci-hub → http://gitlab-lite:8929
+#   但浏览器必须能访问 GitLab 授权页，因此 Location 里的主机名
+#   需要能被宿主解析。这里用 extra_hosts 让容器内的服务名
+#   在宿主上也有对应地址，避免内部主机名泄漏到浏览器。
+# ============================================================================
+services:
+  gitlab-lite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fcloud-gitlab-lite:latest
+    container_name: fcloud-gitlab-lite
+    environment:
+      GITLAB_PORT: "8929"
+      # 浏览器与后端都通过宿主地址访问本服务。
+      # 这个地址同时用于：授权页跳转的 Location、/api/v4/user 的 web_url。
+      GITLAB_PUBLIC_URL: "${GITLAB_PUBLIC_URL:-http://127.0.0.1:8929}"
+      GITLAB_BASE_URL: "${GITLAB_PUBLIC_URL:-http://127.0.0.1:8929}"
+      GITLAB_CLIENT_ID: "${FCLOUD_GITLAB_CLIENT_ID:-test-client-id}"
+      GITLAB_CLIENT_SECRET: "${FCLOUD_GITLAB_CLIENT_SECRET:-test-client-secret}"
+      # 需要验证 §6.1「email 为空回退 username@域名」时取消注释
+      # GITLAB_EMAIL_NULL_FOR: "noemail"
+    ports:
+      - "8929:8929"
+    networks: [fcloud-test]
+    restart: unless-stopped
+
+  fcloud-ci-hub:
+    image: fcloud-ci-hub:latest
+    container_name: fcloud-ci-hub-oauth
+    depends_on:
+      gitlab-lite:
+        condition: service_started
+    environment:
+      # 关键：OAuth 的 authorization-uri / token-uri / user-info-uri 全部基于此地址。
+      # 用宿主网关而非服务名，保证浏览器跳转与后端请求都能通。
+      FCLOUD_GITLAB_BASE_URL: "${GITLAB_PUBLIC_URL:-http://127.0.0.1:8929}"
+      FCLOUD_GITLAB_CLIENT_ID: "${FCLOUD_GITLAB_CLIENT_ID:-test-client-id}"
+      FCLOUD_GITLAB_CLIENT_SECRET: "${FCLOUD_GITLAB_CLIENT_SECRET:-test-client-secret}"
+      # 浏览器侧回调：必须能从宿主机访问，且与 application.yml 的
+      # redirect-uri 标准路径（/login/oauth2/code/gitlab）一致。
+      FCLOUD_OAUTH_REDIRECT_URI: "http://127.0.0.1:18080/login/oauth2/code/gitlab"
+      FCLOUD_JWT_SECRET: "0123456789abcdef0123456789abcdef0123456789"
+      FCLOUD_COOKIE_SECURE: "false"
+      FCLOUD_DB_NAME: "fcloud_ci_hub"
+      FCLOUD_DB_USER: "fcloud"
+      FCLOUD_DB_PASSWORD: "fcloud"
+    volumes:
+      - fcloud-oauth-data:/data/config-hub
+    ports:
+      - "18080:8080"
+    # 容器内访问宿主地址（Linux 需显式映射 host-gateway）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [fcloud-test]
+    restart: unless-stopped
+
+networks:
+  fcloud-test:
+    name: fcloud-test
+    driver: bridge
+
+volumes:
+  fcloud-oauth-data:

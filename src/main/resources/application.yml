@@ -1,0 +1,189 @@
+server:
+  # 本地 bootRun 默认 8080；容器内由 FCLOUD_SERVER_PORT=8081 覆盖
+  port: ${FCLOUD_SERVER_PORT:8080}
+  # 部署在 nginx 后：信任 X-Forwarded-Host/Port/Proto，还原浏览器侧真实地址，
+  # 使 OAuth 的 redirect_uri（含端口）正确生成。
+  forward-headers-strategy: framework
+  error:
+    include-message: never
+    include-stacktrace: never
+
+spring:
+  application:
+    name: fcloud-ci-hub
+
+  datasource:
+    url: jdbc:postgresql://${FCLOUD_DB_HOST:127.0.0.1}:${FCLOUD_DB_PORT:5432}/${FCLOUD_DB_NAME:fcloud_ci_hub}
+    username: ${FCLOUD_DB_USER:fcloud}
+    password: ${FCLOUD_DB_PASSWORD:fcloud}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      # 连接闲置超时短于服务端/网络回收周期，避免拿到已被关闭的连接
+      max-lifetime: 600000
+      keepalive-time: 120000
+      validation-timeout: 5000
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    locations: classpath:db/migration
+    table: fch_flyway_schema_history
+    validate-on-migrate: true
+
+  redis:
+    host: ${FCLOUD_REDIS_HOST:127.0.0.1}
+    port: ${FCLOUD_REDIS_PORT:6379}
+    password: ${FCLOUD_REDIS_PASSWORD:}
+    database: ${FCLOUD_REDIS_DB:0}
+    timeout: 5000
+    connect-timeout: 5000
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+        max-wait: 3000
+      shutdown-timeout: 200ms
+
+  security:
+    oauth2:
+      client:
+        registration:
+          gitlab:
+            # 本地开发默认指向 deploy/gitlab-lite（模拟 GitLab OAuth2，8929 端口）。
+            # 生产环境由 FCLOUD_GITLAB_CLIENT_ID/_SECRET 环境变量覆盖，行为不变。
+            client-id: ${FCLOUD_GITLAB_CLIENT_ID:test-client-id}
+            client-secret: ${FCLOUD_GITLAB_CLIENT_SECRET:test-client-secret}
+            provider: gitlab
+            scope: read_user
+            authorization-grant-type: authorization_code
+            # redirect_uri 必须与 Spring 的回调匹配。优先用环境变量显式指定
+            # 完整的对外地址（含端口）；未指定时回退到标准相对路径。
+            # §6.1 的对外契约 /oauth/gitlab/callback 由 nginx 作为别名反代到
+            # /login/oauth2/code/gitlab。
+            redirect-uri: "${FCLOUD_OAUTH_REDIRECT_URI:{baseUrl}/login/oauth2/code/gitlab}"
+            client-name: GitLab
+        provider:
+          gitlab:
+            # 本地开发默认指向 gitlab-lite（8929）；生产由 FCLOUD_GITLAB_BASE_URL 覆盖
+            authorization-uri: ${FCLOUD_GITLAB_BASE_URL:http://127.0.0.1:8929}/oauth/authorize
+            token-uri: ${FCLOUD_GITLAB_BASE_URL:http://127.0.0.1:8929}/oauth/token
+            user-info-uri: ${FCLOUD_GITLAB_BASE_URL:http://127.0.0.1:8929}/api/v4/user
+            user-name-attribute: username
+
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    default-property-inclusion: non_null
+
+  # §2.4 单文件 ≤50MB：Spring 默认 10MB 会先拦截并返回 500，
+  # 这里放宽到 64MB，让业务层给出明确的 "超过 50MB 限制" 提示（HTTP 400）。
+  servlet:
+    multipart:
+      # 与 fcloud.storage.max-file-size-mb 对齐，超出时由 GlobalExceptionHandler 转成业务提示
+      max-file-size: ${FCLOUD_MAX_FILE_SIZE_MB:50}MB
+      max-request-size: ${FCLOUD_MAX_FILE_SIZE_MB:50}MB
+
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: ASSIGN_ID
+
+fcloud:
+  # ---- OAuth / JWT (§6.1, §6.2) ----
+  gitlab:
+    # 本地开发默认指向 gitlab-lite；生产由 FCLOUD_GITLAB_BASE_URL 覆盖
+    base-url: ${FCLOUD_GITLAB_BASE_URL:http://127.0.0.1:8929}
+  oauth:
+    redirect-uri: ${FCLOUD_OAUTH_REDIRECT_URI:}
+  jwt:
+    # 注意：secret 不设默认值。本地 bootRun 用环境变量或 --args 传入，例如：
+    #   ./gradlew bootRun --args='--server.port=8080 --fcloud.jwt.secret=0123456789abcdef0123456789abcdef0123456789'
+    # 生产必须显式提供 FCLOUD_JWT_SECRET（≥32 字符），缺失时启动即失败。
+    secret: ${FCLOUD_JWT_SECRET:}
+    ttl-hours: ${FCLOUD_JWT_TTL_HOURS:24}
+    remember-ttl-days: ${FCLOUD_JWT_REMEMBER_TTL_DAYS:7}
+  cookie:
+    secure: ${FCLOUD_COOKIE_SECURE:false}
+
+  # ---- Crypto (§6.5) ----
+  master-key: ${FCLOUD_MASTER_KEY:}
+  # 本地开发默认落到仓库 .local-data（容器内仍是 /data/config-hub/master.key，
+  # 由 Dockerfile/entrypoint 传 FCLOUD_MASTER_KEY_FILE 覆盖，互不影响）
+  master-key-file: ${FCLOUD_MASTER_KEY_FILE:D:/code/fcloud-ci-hub/.local-data/master.key}
+
+  # ---- Storage / Backup (§2.4, §9) ----
+  storage:
+    root: ${FCLOUD_STORAGE_ROOT:D:/code/fcloud-ci-hub/.local-data/storage}
+    max-file-size-mb: ${FCLOUD_MAX_FILE_SIZE_MB:50}
+    max-module-total-mb: ${FCLOUD_MAX_MODULE_TOTAL_MB:500}
+    keep-versions: ${FCLOUD_FILE_KEEP_VERSIONS:3}
+  backup:
+    dir: ${FCLOUD_BACKUP_DIR:D:/code/fcloud-ci-hub/.local-data/backups}
+    retain: ${FCLOUD_BACKUP_RETAIN:3}
+
+  # ---- Retention / Rate limit (§7, §8, §11.3) ----
+  audit:
+    retain-days: ${FCLOUD_AUDIT_RETAIN_DAYS:7}
+  access-log:
+    retain-days: ${FCLOUD_ACCESS_LOG_RETAIN_DAYS:30}
+  rate-limit:
+    per-minute: ${FCLOUD_RATE_LIMIT_PER_MINUTE:60}
+
+  # ---- MCP Server（design/mcp-server-design.md）----
+  mcp:
+    # 全局开关；false 时 /mcp 返回 404
+    enabled: ${FCLOUD_MCP_ENABLED:true}
+    # 写工具开关；false 时写工具不出现在 tools/list
+    write-enabled: ${FCLOUD_MCP_WRITE_ENABLED:false}
+    # 加密变量明文（reveal_secret）开关；默认关闭
+    reveal-enabled: ${FCLOUD_MCP_REVEAL_ENABLED:false}
+    max-result-bytes: ${FCLOUD_MCP_MAX_RESULT_BYTES:32768}
+    session-ttl-minutes: ${FCLOUD_MCP_SESSION_TTL_MINUTES:30}
+    rate-per-minute: ${FCLOUD_MCP_RATE_PER_MINUTE:120}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+      # §11.2 健康检查：/actuator/health/liveness 与 /actuator/health/readiness
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+    # readiness 显式包含 DB 与 Redis（§11.2：含 DB/Redis）
+    group:
+      readiness:
+        include: readinessState,db,redis
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    root: INFO
+    ci.fcloud.hub: INFO
+    ci.fcloud.hub.auth.OAuth2LoginSuccessHandler: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%thread] %logger{36} - %msg%n"

@@ -1,0 +1,1986 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>fcloud-ci-hub · UI 设计稿 v1</title>
+<style>
+:root{
+  --bg:#f5f6f8;
+  --surface:#ffffff;
+  --surface-2:#fafbfc;
+  --surface-3:#f2f4f7;
+  --border:#e6e8ed;
+  --border-2:#d7dbe3;
+  --text:#101828;
+  --text-2:#5a6472;
+  --text-3:#6b7584;
+  --primary:#2563eb;
+  --primary-600:#1d4ed8;
+  --primary-700:#1e40af;
+  --primary-50:#eff4ff;
+  --primary-100:#dbe6ff;
+  --danger:#dc2626;
+  --danger-50:#fef2f2;
+  --warn:#b45309;
+  --warn-50:#fffaeb;
+  --ok:#047857;
+  --ok-50:#ecfdf5;
+  --purple:#7c3aed;
+  --env-dev:#0284c7;
+  --env-test:#7c3aed;
+  --env-staging:#d97706;
+  --env-prod:#dc2626;
+  --r:8px;
+  --r-sm:6px;
+  --sh-1:0 1px 2px rgba(16,24,40,.05);
+  --sh-2:0 14px 32px -10px rgba(16,24,40,.18),0 4px 10px -4px rgba(16,24,40,.06);
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+  --sb:220px;
+  --hd:56px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:400 14px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,p{margin:0}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+a{color:inherit;text-decoration:none}
+::selection{background:var(--primary-100)}
+.i{width:16px;height:16px;flex:0 0 16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+/* ---------- shell ---------- */
+.app{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:var(--sb);flex:0 0 var(--sb);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.brand{height:var(--hd);flex:0 0 var(--hd);display:flex;align-items:center;gap:9px;padding:0 16px;border-bottom:1px solid var(--border)}
+.brand-mark{width:26px;height:26px;border-radius:7px;background:linear-gradient(140deg,#3b82f6,#1d4ed8);display:grid;place-items:center;color:#fff;box-shadow:0 2px 6px rgba(37,99,235,.35)}
+.brand-name{font-size:14.5px;font-weight:650;letter-spacing:-.01em}
+.brand-sub{font-size:10.5px;color:var(--text-3);letter-spacing:.04em;margin-top:-2px}
+.nav{flex:1;overflow-y:auto;padding:10px 10px 16px}
+.nav-label{font-size:11px;font-weight:600;color:var(--text-3);letter-spacing:.07em;padding:14px 8px 6px}
+.nav-item{position:relative;display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:var(--r-sm);color:var(--text-2);font-size:13.5px;margin-bottom:1px}
+.nav-item:hover{background:var(--surface-3);color:var(--text)}
+.nav-item.active{background:var(--primary-50);color:var(--primary-600);font-weight:600}
+.nav-item.active::before{content:"";position:absolute;left:-10px;top:7px;bottom:7px;width:3px;border-radius:0 3px 3px 0;background:var(--primary)}
+.nav-item .count{margin-left:auto;font-size:11px;font-weight:600;background:var(--danger);color:#fff;border-radius:9px;padding:0 6px;line-height:16px}
+.sidebar-foot{border-top:1px solid var(--border);padding:12px 14px;font-size:11.5px;color:var(--text-3);display:flex;align-items:center;gap:6px}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{height:var(--hd);flex:0 0 var(--hd);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;gap:16px}
+.crumb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-3)}
+.crumb b{color:var(--text);font-weight:600}
+.crumb .sep{color:#c9cdd6}
+.topbar-right{display:flex;align-items:center;gap:14px}
+.env-pill{display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--border);border-radius:99px;font-size:12px;color:var(--text-2);background:var(--surface-2)}
+.env-pill i{width:6px;height:6px;border-radius:99px;background:var(--env-prod)}
+.who{display:flex;align-items:center;gap:8px}
+.avatar{width:28px;height:28px;border-radius:99px;background:#e8edf7;color:#3b5b9a;display:grid;place-items:center;font-size:12px;font-weight:600;border:1px solid #d4dcee}
+.who .nm{font-size:13px;font-weight:500}
+.badge-admin{font-size:10.5px;font-weight:600;color:var(--primary-700);background:var(--primary-50);border:1px solid var(--primary-100);padding:1px 6px;border-radius:5px;letter-spacing:.02em}
+
+.view{flex:1;overflow:auto;padding:22px 26px 72px;scroll-behavior:smooth}
+.screen{display:none}
+.screen.active{display:block}
+
+/* ---------- page header ---------- */
+.ph{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:18px}
+.ph h1{font-size:20px;font-weight:650;letter-spacing:-.015em;display:flex;align-items:center;gap:8px}
+.ph .sub{font-size:12.5px;color:var(--text-3);margin-top:5px}
+.ph-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto;padding-top:2px}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:var(--r-sm);border:1px solid var(--border-2);background:var(--surface);font-size:13px;font-weight:500;color:var(--text);transition:.15s}
+.btn:hover{border-color:#b9c0cc;background:var(--surface-2)}
+.btn .i{width:15px;height:15px;flex:0 0 15px}
+.btn-primary{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 1px 2px rgba(37,99,235,.3)}
+.btn-primary:hover{background:var(--primary-600);border-color:var(--primary-600)}
+.btn-ghost{border-color:transparent;background:transparent;color:var(--text-2)}
+.btn-ghost:hover{background:var(--surface-3);color:var(--text)}
+.btn-sm{height:28px;padding:0 9px;font-size:12.5px}
+.btn-danger{color:var(--danger);border-color:#f3c9c9;background:#fff}
+.btn-danger:hover{background:var(--danger-50)}
+.icon-btn{width:28px;height:28px;border-radius:var(--r-sm);display:inline-grid;place-items:center;color:var(--text-3)}
+.icon-btn:hover{background:var(--surface-3);color:var(--text)}
+
+/* ---------- cards ---------- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh-1)}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border-bottom:1px solid var(--border)}
+.card-title{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:7px}
+.card-title .n{font-size:11.5px;font-weight:600;color:var(--text-3);background:var(--surface-3);border-radius:5px;padding:0 6px;line-height:17px}
+.card-body{padding:16px}
+.card-foot{padding:11px 16px;border-top:1px solid var(--border);font-size:12.5px;color:var(--text-3);display:flex;align-items:center;justify-content:space-between}
+
+/* ---------- tags / chips ---------- */
+.tag{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 6px;border-radius:5px;font-size:11.5px;font-weight:500;line-height:1;white-space:nowrap}
+.tag-plain{background:var(--surface-3);color:var(--text-2)}
+.tag-lock{background:#fdf4ff;color:#86198f;border:1px solid #f5d0fe}
+.tag-shared{background:#f5f3ff;color:#6d28d9;border:1px solid #e9e4ff}
+.tag-ok{background:var(--ok-50);color:var(--ok);border:1px solid #c9f0dd}
+.tag-warn{background:var(--warn-50);color:var(--warn);border:1px solid #fce6b5}
+.tag-danger{background:var(--danger-50);color:var(--danger);border:1px solid #f8d4d4}
+.chip{display:inline-flex;align-items:center;gap:6px;height:25px;padding:0 8px;border-radius:var(--r-sm);background:var(--surface-3);border:1px solid transparent;font-size:12px;color:var(--text);font-family:var(--mono);transition:.14s;cursor:pointer}
+.chip:hover{background:#eaedf3;border-color:var(--border-2)}
+.chip .dot{width:6px;height:6px;border-radius:99px;background:#9aa3b2}
+.chip-sub{border:1px dashed #b9c0cc;background:#fcfcfd;color:var(--text-2)}
+.chip-sub .dot{background:var(--purple)}
+.mono{font-family:var(--mono);font-size:12.5px}
+.muted{color:var(--text-3)}
+.sec{color:var(--text-2)}
+
+/* ---------- tables ---------- */
+table{width:100%;border-collapse:separate;border-spacing:0}
+th{text-align:left;font-size:11.5px;font-weight:600;color:var(--text-2);letter-spacing:.02em;background:var(--surface-2);padding:0 12px;height:36px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:0 12px;height:44px;border-bottom:1px solid #f0f1f5;font-size:13px;vertical-align:middle}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:#fbfcfe}
+.t-strong{font-weight:500}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- dashboard ---------- */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh-1);position:relative;overflow:hidden}
+.stat::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line,#e6e8ed)}
+.stat .k{font-size:12.5px;color:var(--text-2);display:flex;align-items:center;gap:6px}
+.stat .v{font-size:26px;font-weight:650;letter-spacing:-.02em;margin-top:6px;font-variant-numeric:tabular-nums}
+.stat .v small{font-size:12px;font-weight:500;color:var(--text-3);margin-left:4px}
+.stat.red{--line:var(--danger)} .stat.red .v{color:var(--danger)}
+.stat.amber{--line:#f59e0b} .stat.amber .v{color:var(--warn)}
+.stat.blue{--line:var(--primary)} .stat.blue .v{color:var(--primary-600)}
+.stat.gray{--line:#c3c9d4} .stat.gray .v{color:var(--text)}
+
+.todo{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:var(--r-sm);transition:.14s}
+.todo:hover{background:var(--surface-3)}
+.todo + .todo{border-top:1px solid #f2f3f6}
+.todo-ic{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;flex:0 0 26px}
+.todo-main{min-width:0;flex:1}
+.todo-t{font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px}
+.todo-s{font-size:11.5px;color:var(--text-3);margin-top:2px}
+.todo-act{color:var(--primary);font-size:12.5px;font-weight:500;opacity:0;transition:.14s;white-space:nowrap}
+.todo:hover .todo-act{opacity:1}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* ---------- board ---------- */
+.board{display:grid;grid-template-columns:264px 1fr;gap:16px;align-items:start}
+.rail{position:sticky;top:0}
+.rail-item{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:9px 10px;border-radius:var(--r-sm);cursor:pointer;transition:.14s}
+.rail-item:hover{background:var(--surface-3)}
+.rail-item .nm{font-size:12.5px;font-family:var(--mono)}
+.rail-item .meta{margin-left:auto;font-size:11.5px;color:var(--text-3)}
+.rail-ic{width:24px;height:24px;border-radius:6px;background:#f5f3ff;color:#7c3aed;display:grid;place-items:center;flex:0 0 24px}
+.apps{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.appcard{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh-1);transition:.16s;position:relative}
+.appcard:hover{border-color:var(--border-2);box-shadow:0 2px 10px rgba(16,24,40,.06)}
+.appcard-h{display:flex;align-items:flex-start;gap:10px;padding:14px 14px 10px}
+.app-ic{width:30px;height:30px;border-radius:8px;background:var(--surface-3);display:grid;place-items:center;font-size:12px;font-weight:650;color:var(--text-2);flex:0 0 30px;font-family:var(--mono)}
+.app-t{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px}
+.app-c{font-size:11.5px;color:var(--text-3);font-family:var(--mono);margin-top:1px}
+.app-d{font-size:12.5px;color:var(--text-2);padding:0 14px 12px;line-height:1.5}
+.group{padding:0 14px 12px}
+.group-l{font-size:10.5px;font-weight:600;color:var(--text-3);letter-spacing:.06em;margin-bottom:6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.appcard-f{margin-top:auto;border-top:1px solid var(--border);padding:9px 14px;display:flex;align-items:center;gap:12px;font-size:11.5px;color:var(--text-3)}
+.appcard-f b{font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
+
+/* 健康度 */
+.board-bar{display:flex;align-items:center;gap:16px;margin-bottom:12px;font-size:11.5px;color:var(--text-3)}
+.board-bar .lg{display:inline-flex;align-items:center;gap:6px}
+.board-bar .lg .dot{width:7px;height:7px;border-radius:99px;flex:0 0 7px}
+.board-bar .lg-note{color:var(--text-3)}
+.risk{display:none;align-items:center;height:17px;padding:0 5px;border-radius:5px;font-size:10.5px;font-weight:600;line-height:1;white-space:nowrap}
+.risk.on{display:inline-flex}
+.risk.red{color:var(--danger);background:var(--danger-50);border:1px solid #f8d4d4}
+.risk.amber{color:var(--warn);background:var(--warn-50);border:1px solid #fce6b5}
+.chip[data-health="red"] .dot{background:var(--danger);box-shadow:0 0 0 3px rgba(220,38,38,.10)}
+.chip[data-health="amber"] .dot{background:#d97706;box-shadow:0 0 0 3px rgba(217,119,6,.10)}
+.chip[data-health="ok"] .dot{display:none}
+.chip-add{border:1px dashed var(--border-2);background:transparent;color:var(--text-3);font-family:var(--sans);height:25px;padding:0 8px;font-size:11.5px}
+.chip-add:hover{border-color:var(--primary-100);background:var(--primary-50);color:var(--primary-600)}
+
+/* 订阅选择器（popover） */
+.picker{position:fixed;z-index:70;width:330px;background:#fff;border:1px solid var(--border-2);border-radius:var(--r);box-shadow:var(--sh-2);overflow:hidden}
+.picker-h{display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--border);background:var(--surface-2);font-size:12.5px;font-weight:600}
+.picker-h .mono{font-weight:400;font-size:11.5px;color:var(--text-3)}
+.picker-s{padding:8px 10px;border-bottom:1px solid var(--border)}
+.picker-s input{width:100%;height:28px;border:1px solid var(--border-2);border-radius:var(--r-sm);padding:0 8px;font:400 12px var(--sans);color:var(--text);outline:0;background:#fff}
+.picker-s input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.picker-b{max-height:252px;overflow:auto;padding:4px}
+.pk-row{display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;padding:8px;border-radius:var(--r-sm)}
+.pk-row:hover{background:var(--surface-3)}
+.pk-main{flex:1;min-width:0}
+.pk-t{display:flex;align-items:center;gap:6px;font:500 12.5px var(--mono);color:var(--text)}
+.pk-s{font-size:11.5px;color:var(--text-3);margin-top:2px}
+.pk-empty{padding:22px 10px;text-align:center;font-size:12px;color:var(--text-3)}
+.picker-f{display:flex;align-items:center;gap:6px;padding:8px 12px;border-top:1px solid var(--border);background:var(--surface-2);font-size:11px;color:var(--text-3)}
+.picker-f b{font-weight:600;color:var(--text-2)}
+.dw-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 10px;border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:7px}
+.dw-row:hover{border-color:var(--border-2);background:var(--surface-2)}
+
+/* ---------- matrix ---------- */
+.matrix-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh-1);overflow:auto;max-height:calc(100vh - 326px)}
+.matrix{min-width:1072px;table-layout:fixed}
+.matrix thead th{position:sticky;top:0;z-index:3;background:var(--surface-2)}
+.matrix th{padding:0 10px}
+.matrix td{padding:0 6px;height:46px}
+.matrix .c-drag{width:28px;padding:0;text-align:center}
+.matrix .c-key{width:198px}
+.matrix .c-type{width:62px}
+.matrix .c-remark{width:128px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.matrix .c-global{width:154px}
+.matrix .c-env{width:118px}
+.matrix .c-ops{width:30px;padding:0}
+.matrix tbody tr:hover td{background:#fbfcfe}
+.matrix .sticky{position:sticky;left:0;z-index:2;background:var(--surface)}
+.matrix tbody tr:hover .sticky{background:#fbfcfe}
+.matrix thead .sticky{z-index:4;background:var(--surface-2)}
+.grip{display:inline-block;color:#c9cdd6;cursor:grab;line-height:0;opacity:0;transition:.14s}
+tr:hover .grip{opacity:1}
+.key{font-family:var(--mono);font-size:12.5px;font-weight:500;letter-spacing:-.01em}
+.req{color:var(--danger);font-weight:700;margin-left:3px;font-size:13px}
+.env-head{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11.5px;color:var(--text-2);font-weight:600}
+.env-head .dot{width:7px;height:7px;border-radius:99px;background:var(--c,#9aa3b2);box-shadow:0 0 0 3px color-mix(in srgb,var(--c,#9aa3b2) 14%,transparent)}
+.env-count{margin-left:2px;font-size:10px;font-weight:700;color:#fff;background:var(--danger);border-radius:99px;padding:0 4px;line-height:14px;font-family:var(--sans)}
+.cell{position:relative;display:flex;align-items:center;width:100%;height:32px;padding:0 8px;border-radius:var(--r-sm);font-size:12.5px;text-align:left;border:1px solid transparent;transition:.12s;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cell:hover{border-color:var(--border-2);background:#fff}
+.cell .txt{overflow:hidden;text-overflow:ellipsis}
+.cell.is-val{font-family:var(--mono);color:var(--text);background:#fff;border-color:#eceef3}
+.cell.is-val.ov{border-left:2px solid var(--primary);padding-left:9px;background:#fcfdff}
+.cell.is-val.ov:hover{border-left-color:var(--primary-600)}
+.cell.is-val .mark{display:inline-block;width:5px;height:5px;border-radius:99px;background:var(--primary);margin-left:auto;flex:0 0 5px}
+.cell.is-inherit{color:#7d8595;font-family:var(--mono)}
+.cell.is-inherit .arrow{color:#b3bac6;margin-right:4px;font-family:var(--sans)}
+.cell.is-empty{color:#7d8595;border:1px dashed #e1e4ea;background:#fcfcfd}
+.cell.is-empty .txt{font-size:12px}
+.cell.is-secret{font-family:var(--mono);letter-spacing:.16em;color:var(--text-2);background:#fcfcfd;border-color:#eef0f4}
+.cell.is-secret .eye{margin-left:auto;letter-spacing:0;color:var(--text-3);display:inline-flex}
+.cell.is-secret:hover .eye{color:var(--primary)}
+.cell.is-secret.ov{border-left:2px solid var(--primary);padding-left:9px;background:#fcfdff}
+.cell-input{width:100%;height:32px;padding:0 7px;border:1px solid var(--primary);border-radius:var(--r-sm);font:500 12.5px var(--mono);color:var(--text);background:#fff;outline:0;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.edit-tip{position:absolute;right:-1px;top:-18px;font-size:10.5px;color:var(--primary-600);letter-spacing:.02em;font-family:var(--sans);white-space:nowrap}
+.col-focus{background:#fcfdff!important}
+
+/* matrix toolbar */
+.mx-tool{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.mx-search{position:relative;display:flex;align-items:center;gap:7px;height:32px;padding:0 9px;background:#fff;border:1px solid var(--border-2);border-radius:var(--r-sm);width:272px;flex:0 0 auto}
+.mx-search:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.mx-search .i{color:var(--text-3)}
+.mx-search input{flex:1;min-width:0;border:0;outline:0;font:400 12.5px var(--sans);color:var(--text);background:none}
+.mx-search input::placeholder{color:#98a1b0}
+.mx-search kbd{font:600 10.5px/15px var(--mono);color:var(--text-3);border:1px solid var(--border-2);border-bottom-width:2px;border-radius:4px;padding:0 4px}
+.pf{display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border-radius:99px;border:1px solid var(--border);background:#fff;font-size:12px;color:var(--text-2);font-family:var(--mono);white-space:nowrap}
+.pf i{font-style:normal;font-size:10.5px;color:var(--text-3);font-family:var(--sans)}
+.pf:hover{border-color:var(--border-2);color:var(--text)}
+.pf.on{background:var(--primary-50);border-color:var(--primary-100);color:var(--primary-700);font-weight:600}
+.pf.on i{color:var(--primary-600)}
+.mx-count{margin-left:auto;font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mx-count b{color:var(--text);font-weight:600}
+.mx-count .lnk{color:var(--primary);cursor:pointer;margin-left:6px}
+tr.is-hidden{display:none}
+.mx-empty td{height:104px;text-align:center}
+.mx-empty .e-t{font-size:13px;color:var(--text-2);font-weight:500}
+.mx-empty .e-s{font-size:12px;color:var(--text-3);margin-top:4px}
+.mx-empty button{color:var(--primary);font-size:12.5px;margin-top:8px}
+
+/* 继承链 popover */
+.chain-pop{position:fixed;z-index:70;width:332px;background:#fff;border:1px solid var(--border-2);border-radius:var(--r);box-shadow:var(--sh-2);overflow:hidden}
+.chain-pop-h{display:flex;align-items:center;gap:7px;padding:9px 12px;border-bottom:1px solid var(--border);background:var(--surface-2)}
+.chain-pop-h .k{font:600 12.5px var(--mono)}
+.chain-pop-b{padding:5px 0}
+.chain-row{position:relative;display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12.5px}
+.chain-row .dot{width:7px;height:7px;border-radius:99px;background:var(--c,#c3c9d4);flex:0 0 7px}
+.chain-row .nm{font:500 12px var(--mono);color:var(--text-2);min-width:50px;flex:0 0 auto}
+.chain-row .v{margin-left:auto;min-width:0;flex:0 1 auto;text-align:right;font:500 12px var(--mono);color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chain-row.und .nm{color:var(--text-3);font-weight:400}
+.chain-row.und .v{color:#98a1b0;font-size:11.5px;font-family:var(--sans)}
+.chain-row.hit{background:var(--primary-50)}
+.chain-row.hit::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--primary)}
+.chain-row.hit .nm{color:var(--primary-700);font-weight:600}
+.chain-row.hit .v{color:var(--primary-700);font-weight:600}
+.chain-row .lv{font-size:10px;font-weight:600;color:var(--primary-700);background:#fff;border:1px solid var(--primary-100);border-radius:4px;padding:0 4px;line-height:14px;flex:0 0 auto}
+.chain-row .lv-plain{color:var(--text-3);border-color:var(--border);background:var(--surface-2)}
+.chain-row.self .nm{color:var(--text);font-weight:600}
+.chain-pop-f{display:flex;align-items:center;gap:8px;padding:9px 12px;border-top:1px solid var(--border);background:var(--surface-2)}
+.chain-pop-f .tip{font-size:11px;color:var(--text-3);margin-right:auto;line-height:1.4}
+
+/* 深链定位 */
+.dl-bar{display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:10px;background:var(--primary-50);border:1px solid var(--primary-100);border-radius:var(--r-sm);font-size:12.5px;color:#1e40af}
+.dl-bar .mono{font-size:12px;font-weight:600}
+tr.is-hit td{background:#f5f9ff}
+.cell.is-hit{border-color:var(--primary);box-shadow:0 0 0 2px rgba(37,99,235,.22)}
+.toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,8px);background:#101828;color:#fff;font-size:12.5px;padding:9px 14px;border-radius:var(--r-sm);box-shadow:var(--sh-2);opacity:0;pointer-events:none;transition:.2s;z-index:80;max-width:520px}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* template banner */
+.tplbar{display:flex;align-items:center;gap:10px;background:linear-gradient(90deg,#fffaeb,#fffdf7);border:1px solid #fce6b5;border-radius:var(--r);padding:9px 13px;margin-bottom:14px;font-size:12.5px;color:#92400e}
+.tplbar .i{color:#d97706}
+.tplbar b{font-weight:600}
+.tplbar .btn{margin-left:auto;height:26px;font-size:12px;background:#fff}
+
+/* tabs */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:18px 0 14px}
+.tab{height:34px;padding:0 12px;font-size:13px;color:var(--text-2);border-bottom:2px solid transparent;display:flex;align-items:center;gap:6px;margin-bottom:-1px}
+.tab:hover{color:var(--text)}
+.tab.on{color:var(--primary-600);font-weight:600;border-bottom-color:var(--primary)}
+.tab .n{font-size:11px;color:var(--text-3);background:var(--surface-3);border-radius:4px;padding:0 5px;line-height:16px}
+
+/* files + members */
+.file-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f2f3f6}
+.file-row:last-child{border-bottom:0}
+.file-ic{width:28px;height:28px;border-radius:6px;background:var(--surface-3);display:grid;place-items:center;color:var(--text-2);flex:0 0 28px}
+.member{display:flex;align-items:center;gap:9px;padding:7px 0}
+.member .nm{font-size:12.5px;font-weight:500}
+.member .em{font-size:11px;color:var(--text-3)}
+
+/* ---------- misc panels ---------- */
+.split{display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start}
+.list-item{display:flex;align-items:flex-start;gap:9px;padding:11px 12px;border-radius:var(--r-sm);cursor:pointer}
+.list-item:hover{background:var(--surface-3)}
+.list-item.on{background:var(--primary-50);box-shadow:inset 2px 0 0 var(--primary)}
+.list-item .t{font-size:13px;font-weight:500}
+.list-item .s{font-size:11px;color:var(--text-3);margin-top:2px;font-family:var(--mono)}
+.def-table td{height:40px}
+.chain{display:flex;align-items:center;gap:0;flex-wrap:wrap}
+.chain-node{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);font-size:12.5px;box-shadow:var(--sh-1)}
+.chain-node .dot{width:8px;height:8px;border-radius:99px;background:var(--c)}
+.chain-arrow{color:#c9cdd6;margin:0 6px}
+.filters{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.field{height:32px;border:1px solid var(--border-2);border-radius:var(--r-sm);background:#fff;padding:0 10px;font-size:13px;color:var(--text-2);display:flex;align-items:center;gap:6px}
+.field.mono{font-family:var(--mono);font-size:12px}
+.code{background:#0f172a;color:#e2e8f0;border-radius:var(--r);padding:14px 16px;font:12.5px/1.9 var(--mono);overflow:auto;position:relative;white-space:pre;tab-size:2}
+.code .c{color:#7d8ba1}
+.code .s{color:#7dd3a0}
+.code .k{color:#93b4ff}
+.code-lang{position:absolute;right:10px;top:9px;font-size:10.5px;color:#5f6b80;letter-spacing:.06em;font-family:var(--sans)}
+.callout{display:flex;gap:10px;border-radius:var(--r);padding:12px 14px;font-size:12.5px;line-height:1.6}
+.callout.warn{background:var(--warn-50);border:1px solid #fce6b5;color:#92400e}
+.callout.danger{background:var(--danger-50);border:1px solid #f8d4d4;color:#991b1b}
+.callout.info{background:var(--primary-50);border:1px solid var(--primary-100);color:#1e40af}
+.secret-box{display:flex;align-items:center;gap:8px;background:#0f172a;color:#7dd3a0;border-radius:var(--r-sm);padding:10px 12px;font:12.5px var(--mono);word-break:break-all}
+.kv{display:flex;justify-content:space-between;gap:16px;padding:8px 0;font-size:12.5px;border-bottom:1px solid #f4f5f8}
+.kv:last-child{border-bottom:0}
+.kv .k{color:var(--text-3)}
+.kv .v{color:var(--text);font-weight:500}
+
+/* login */
+#s-login{position:fixed;inset:0;z-index:40;padding:0}
+.login-wrap{height:100%;display:grid;place-items:center;background:
+  radial-gradient(900px 500px at 50% -10%,#e8eeff 0%,transparent 60%),var(--bg)}
+.login-card{width:392px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 20px 50px -20px rgba(16,24,40,.2);padding:32px 32px 26px;text-align:center}
+.login-logo{width:46px;height:46px;border-radius:12px;background:linear-gradient(140deg,#3b82f6,#1d4ed8);display:grid;place-items:center;color:#fff;margin:0 auto 14px;box-shadow:0 6px 16px rgba(37,99,235,.32)}
+.login-card h2{font-size:18px;font-weight:650;letter-spacing:-.01em}
+.login-card p{font-size:12.5px;color:var(--text-3);margin-top:6px;line-height:1.6}
+.gitlab-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:40px;border-radius:var(--r-sm);background:#fc6d26;color:#fff;font-size:13.5px;font-weight:600;margin-top:22px;box-shadow:0 2px 8px rgba(252,109,38,.3)}
+.gitlab-btn:hover{background:#e85f1c}
+.remember{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:14px;font-size:12.5px;color:var(--text-2)}
+.login-foot{margin-top:22px;padding-top:16px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text-3)}
+
+/* drawer / dialog */
+.overlay{position:fixed;inset:0;background:rgba(16,24,40,.32);z-index:50;display:none}
+.overlay.on{display:block}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:480px;background:#fff;z-index:51;display:none;flex-direction:column;box-shadow:-24px 0 60px -20px rgba(16,24,40,.24)}
+.drawer.on{display:flex;animation:slide .22s ease}
+@keyframes slide{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}
+.drawer-h{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.drawer-h h3{font-size:15px;font-weight:600}
+.drawer-b{flex:1;overflow:auto;padding:18px 20px}
+.drawer-f{padding:13px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.diff-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r-sm);border:1px solid var(--border);margin-bottom:7px}
+.diff-row .mono{font-size:12px}
+.checkbox{width:15px;height:15px;border-radius:4px;border:1.5px solid var(--border-2);display:grid;place-items:center;flex:0 0 15px}
+.checkbox.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.radio{width:14px;height:14px;border-radius:99px;border:1.5px solid var(--border-2);display:grid;place-items:center}
+.radio.on{border-color:var(--primary)}
+.radio.on::after{content:"";width:7px;height:7px;border-radius:99px;background:var(--primary)}
+
+@media (max-width:1280px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .split{grid-template-columns:1fr}
+}
+@media (max-width:980px){
+  .board{grid-template-columns:1fr}
+  .rail{position:static}
+}
+@media (max-width:1023px){
+  .sidebar{width:60px;flex:0 0 60px}
+  .brand-name,.brand-sub,.nav-label,.nav-item span,.sidebar-foot{display:none}
+  .nav-item{justify-content:center;padding:0}
+  .nav-item.active::before{left:-10px}
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M2.8 20c0-3.4 2.8-5.6 6.2-5.6s6.2 2.2 6.2 5.6"/><path d="M16.5 5.2a3.4 3.4 0 0 1 0 6.4M17.5 14.7c2.2.5 3.7 2.2 3.7 4.8"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.5 12.5 8-8M16 5l3 3M13.5 7.5 16 10"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4.5" rx="1.4"/><path d="M5 8.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19V8.5"/><path d="M10 12.5h4"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v18H6.5A2.5 2.5 0 0 1 4 18.5v-13Z"/><path d="M4 17.5h15M8 7.5h7"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.6"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M15.5 5.5v-1a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h1"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M8 8l4-4 4 4"/><path d="M4 16v3a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 19v-3"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.8 21 19H3l9-15.2Z"/><path d="M12 9.5v4.5M12 16.8v.2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-arrow-r" viewBox="0 0 24 24"><path d="M4 12h15M14 7l5 5-5 5"/></symbol>
+  <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14-4.5L4 9"/><path d="M4 5v4h4M4 13a8 8 0 0 0 14 4.5L20 15"/><path d="M20 19v-4h-4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .4-8A5.5 5.5 0 0 0 6.6 9.6 4.2 4.2 0 0 0 7 18Z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M8 12l4 4 4-4"/><path d="M4 19h16"/></symbol>
+</svg>
+
+<div class="app">
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"><svg class="i" style="width:15px;height:15px"><use href="#i-cloud"/></svg></div>
+      <div>
+        <div class="brand-name">fcloud-ci-hub</div>
+        <div class="brand-sub">配置分发中心</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-label">配置</div>
+      <a class="nav-item active" data-screen="dashboard"><svg class="i"><use href="#i-home"/></svg><span>工作台</span><span class="count">3</span></a>
+      <a class="nav-item" data-screen="board"><svg class="i"><use href="#i-grid"/></svg><span>应用看板</span></a>
+      <a class="nav-item" data-screen="module"><svg class="i"><use href="#i-layers"/></svg><span>模块详情</span></a>
+      <a class="nav-item" data-screen="templates"><svg class="i"><use href="#i-book"/></svg><span>模板库</span></a>
+      <a class="nav-item" data-screen="envs"><svg class="i"><use href="#i-sliders"/></svg><span>环境管理</span></a>
+
+      <div class="nav-label">系统</div>
+      <a class="nav-item" data-screen="users"><svg class="i"><use href="#i-users"/></svg><span>用户管理</span></a>
+      <a class="nav-item" data-screen="tokens"><svg class="i"><use href="#i-key"/></svg><span>Token 管理</span></a>
+      <a class="nav-item" data-screen="audit"><svg class="i"><use href="#i-file"/></svg><span>审计日志</span></a>
+      <a class="nav-item" data-screen="backups"><svg class="i"><use href="#i-archive"/></svg><span>备份恢复</span></a>
+
+      <div class="nav-label">帮助</div>
+      <a class="nav-item" data-screen="docs"><svg class="i"><use href="#i-book"/></svg><span>流水线接入</span></a>
+      <a class="nav-item" data-screen="login"><svg class="i"><use href="#i-lock"/></svg><span>登录页</span></a>
+    </nav>
+
+    <div class="sidebar-foot">
+      <span style="width:6px;height:6px;border-radius:99px;background:#10b981;display:inline-block"></span>
+      v1.0.0 · PG / Redis 正常
+    </div>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb">
+        <span>fcloud-ci-hub</span><span class="sep">/</span><b id="crumb-now">工作台</b>
+      </div>
+      <div class="topbar-right">
+        <div class="env-pill"><i></i>生产 · prod</div>
+        <div class="who">
+          <div class="avatar">陈</div>
+          <span class="nm">陈亦然</span>
+          <span class="badge-admin">系统管理员</span>
+          <svg class="i" style="width:14px;color:#8b93a1"><use href="#i-chevron"/></svg>
+        </div>
+      </div>
+    </header>
+
+    <div class="view">
+
+      <!-- ========== 1. 工作台 ========== -->
+      <section class="screen active" id="s-dashboard">
+        <div class="ph">
+          <div>
+            <h1>工作台</h1>
+            <div class="sub">今天有 3 项配置风险需要处理。</div>
+          </div>
+          <div class="ph-actions">
+            <button class="btn"><svg class="i"><use href="#i-sync"/></svg>刷新</button>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat red">
+            <div class="k"><svg class="i" style="width:14px;height:14px"><use href="#i-alert"/></svg>缺必填变量</div>
+            <div class="v">4<small>模块 × 环境</small></div>
+          </div>
+          <div class="stat amber">
+            <div class="k"><svg class="i" style="width:14px;height:14px"><use href="#i-sync"/></svg>模板待同步</div>
+            <div class="v">2<small>个模块</small></div>
+          </div>
+          <div class="stat blue">
+            <div class="k"><svg class="i" style="width:14px;height:14px"><use href="#i-key"/></svg>Token 7 天内到期</div>
+            <div class="v">1<small>个</small></div>
+          </div>
+          <div class="stat gray">
+            <div class="k"><svg class="i" style="width:14px;height:14px"><use href="#i-file"/></svg>24h 高危操作</div>
+            <div class="v">6<small>次</small></div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title"><svg class="i" style="width:15px;color:var(--danger)"><use href="#i-alert"/></svg>缺必填变量<span class="n">4</span></div>
+              <button class="btn btn-ghost btn-sm">查看全部</button>
+            </div>
+            <div class="card-body" style="padding:6px 8px">
+              <a class="todo">
+                <div class="todo-ic" style="background:var(--danger-50);color:var(--danger)"><svg class="i" style="width:14px"><use href="#i-alert"/></svg></div>
+                <div class="todo-main">
+                  <div class="todo-t"><span class="mono" style="font-size:12.5px">db-config</span><span class="muted">·</span><span class="tag tag-danger">prod</span></div>
+                  <div class="todo-s">缺 DB_PASSWORD、DB_SSL 共 2 个必填项</div>
+                </div>
+                <span class="todo-act">去填写 →</span>
+              </a>
+              <a class="todo">
+                <div class="todo-ic" style="background:var(--danger-50);color:var(--danger)"><svg class="i" style="width:14px"><use href="#i-alert"/></svg></div>
+                <div class="todo-main">
+                  <div class="todo-t"><span class="mono" style="font-size:12.5px">mq-consumer</span><span class="muted">·</span><span class="tag tag-danger">staging</span></div>
+                  <div class="todo-s">缺 RABBIT_VHOST</div>
+                </div>
+                <span class="todo-act">去填写 →</span>
+              </a>
+              <a class="todo">
+                <div class="todo-ic" style="background:var(--danger-50);color:var(--danger)"><svg class="i" style="width:14px"><use href="#i-alert"/></svg></div>
+                <div class="todo-main">
+                  <div class="todo-t"><span class="mono" style="font-size:12.5px">common-notify</span><span class="muted">·</span><span class="tag tag-danger">test</span></div>
+                  <div class="todo-s">共享模块缺 NOTIFY_SECRET</div>
+                </div>
+                <span class="todo-act">去填写 →</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title"><svg class="i" style="width:15px;color:#d97706"><use href="#i-sync"/></svg>模板待同步<span class="n">2</span></div>
+              <button class="btn btn-ghost btn-sm">查看全部</button>
+            </div>
+            <div class="card-body" style="padding:6px 8px">
+              <a class="todo">
+                <div class="todo-ic" style="background:var(--warn-50);color:var(--warn)"><svg class="i" style="width:14px"><use href="#i-layers"/></svg></div>
+                <div class="todo-main">
+                  <div class="todo-t"><span class="mono" style="font-size:12.5px">payment-service / db-config</span></div>
+                  <div class="todo-s">模板「MySQL 标准配置」新增 1 项、变更 2 项</div>
+                </div>
+                <span class="todo-act">看 diff →</span>
+              </a>
+              <a class="todo">
+                <div class="todo-ic" style="background:var(--warn-50);color:var(--warn)"><svg class="i" style="width:14px"><use href="#i-layers"/></svg></div>
+                <div class="todo-main">
+                  <div class="todo-t"><span class="mono" style="font-size:12.5px">order-service / cache</span></div>
+                  <div class="todo-s">模板「Redis 连接」变更 1 项（证书路径）</div>
+                </div>
+                <span class="todo-act">看 diff →</span>
+              </a>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title"><svg class="i" style="width:15px;color:var(--primary)"><use href="#i-key"/></svg>Token 7 天内到期<span class="n">1</span></div>
+              <button class="btn btn-ghost btn-sm">去续期</button>
+            </div>
+            <div class="card-body" style="padding:6px 8px">
+              <a class="todo">
+                <div class="todo-ic" style="background:var(--primary-50);color:var(--primary)"><svg class="i" style="width:14px"><use href="#i-key"/></svg></div>
+                <div class="todo-main">
+                  <div class="todo-t"><span class="mono" style="font-size:12.5px">payment-service / ci-prod</span><span class="tag tag-warn">5 天后</span></div>
+                  <div class="todo-s">前缀 chub_7f3a · 2026-10-24 12:00 到期</div>
+                </div>
+                <span class="todo-act">续期 →</span>
+              </a>
+              <a class="todo" style="opacity:.55">
+                <div class="todo-ic" style="background:var(--surface-3);color:var(--text-3)"><svg class="i" style="width:14px"><use href="#i-check"/></svg></div>
+                <div class="todo-main">
+                  <div class="todo-t"><span class="mono" style="font-size:12.5px">order-service / ci-staging</span><span class="tag tag-ok">已续期</span></div>
+                  <div class="todo-s">新 Token 到期 2027-01-01</div>
+                </div>
+              </a>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title"><svg class="i" style="width:15px;color:var(--danger)"><use href="#i-file"/></svg>24h 高危操作<span class="n">6</span></div>
+              <button class="btn btn-ghost btn-sm">查审计</button>
+            </div>
+            <div class="card-body" style="padding:6px 8px">
+              <a class="todo">
+                <div class="todo-ic" style="background:var(--danger-50);color:var(--danger)"><svg class="i" style="width:14px"><use href="#i-eye"/></svg></div>
+                <div class="todo-main">
+                  <div class="todo-t"><span class="mono" style="font-size:12.5px">DB_PASSWORD</span><span class="tag tag-danger">查看明文</span></div>
+                  <div class="todo-s">陈亦然 · db-config · prod · 2 小时前</div>
+                </div>
+                <span class="todo-act">查看 →</span>
+              </a>
+              <a class="todo">
+                <div class="todo-ic" style="background:var(--danger-50);color:var(--danger)"><svg class="i" style="width:14px"><use href="#i-x"/></svg></div>
+                <div class="todo-main">
+                  <div class="todo-t"><span class="mono" style="font-size:12.5px">init-data.json</span><span class="tag tag-danger">删除文件</span></div>
+                  <div class="todo-s">林可 · cache · dev · 4 小时前</div>
+                </div>
+                <span class="todo-act">查看 →</span>
+              </a>
+              <a class="todo">
+                <div class="todo-ic" style="background:var(--danger-50);color:var(--danger)"><svg class="i" style="width:14px"><use href="#i-archive"/></svg></div>
+                <div class="todo-main">
+                  <div class="todo-t"><span class="mono" style="font-size:12.5px">fcloud-backup-20261017</span><span class="tag tag-danger">恢复备份</span></div>
+                  <div class="todo-s">陈亦然 · 策略 OVERWRITE · 昨天</div>
+                </div>
+                <span class="todo-act">查看 →</span>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-head">
+            <div class="card-title">最近打开的模块</div>
+            <button class="btn btn-ghost btn-sm">全部模块</button>
+          </div>
+          <table>
+            <thead><tr><th>模块</th><th>所属应用</th><th>变量</th><th>环境</th><th>最后修改</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="mono t-strong">db-config</td><td>payment-service</td><td class="num">12</td><td><span class="tag tag-plain">dev</span> <span class="tag tag-plain">test</span> <span class="tag tag-plain">staging</span> <span class="tag tag-plain">prod</span></td><td class="muted">2 分钟前 · 陈亦然</td><td style="text-align:right"><svg class="i" style="color:#c9cdd6"><use href="#i-arrow-r"/></svg></td></tr>
+              <tr><td class="mono t-strong">cache</td><td>order-service</td><td class="num">8</td><td><span class="tag tag-plain">dev</span> <span class="tag tag-plain">test</span> <span class="tag tag-plain">prod</span></td><td class="muted">1 小时前 · 林可</td><td style="text-align:right"><svg class="i" style="color:#c9cdd6"><use href="#i-arrow-r"/></svg></td></tr>
+              <tr><td class="mono t-strong">common-notify <span class="tag tag-shared">共享</span></td><td class="muted">3 个应用订阅</td><td class="num">6</td><td><span class="tag tag-plain">全部</span></td><td class="muted">昨天 · 陈亦然</td><td style="text-align:right"><svg class="i" style="color:#c9cdd6"><use href="#i-arrow-r"/></svg></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========== 2. 应用看板 ========== -->
+      <section class="screen" id="s-board">
+        <div class="ph">
+          <div>
+            <h1>应用看板</h1>
+            <div class="sub">模块 chip 上的状态点标出问题；订阅共享模块在卡片的「订阅」组里完成。</div>
+          </div>
+          <div class="ph-actions">
+            <div class="field"><svg class="i" style="width:14px"><use href="#i-search"/></svg><span class="muted">搜索应用 / 模块</span></div>
+            <button class="btn"><svg class="i"><use href="#i-plus"/></svg>新建应用</button>
+          </div>
+        </div>
+
+        <div class="board">
+          <div class="rail">
+            <div class="card">
+              <div class="card-head" style="padding:11px 13px">
+                <div class="card-title" style="font-size:13px">共享模块库<span class="n">3</span></div>
+              </div>
+              <div class="card-body" style="padding:6px">
+                <button class="rail-item" data-mod="common-notify">
+                  <div class="rail-ic"><svg class="i" style="width:13px"><use href="#i-layers"/></svg></div>
+                  <div>
+                    <div class="nm">common-notify</div>
+                    <div style="font-size:11px;color:var(--text-3)">通知渠道统一配置</div>
+                  </div>
+                  <span class="meta"><b data-mod-subs="common-notify">0</b> 订阅</span>
+                </button>
+                <button class="rail-item" data-mod="redis-config">
+                  <div class="rail-ic"><svg class="i" style="width:13px"><use href="#i-layers"/></svg></div>
+                  <div>
+                    <div class="nm">redis-config</div>
+                    <div style="font-size:11px;color:var(--text-3)">Redis 连接参数</div>
+                  </div>
+                  <span class="meta"><b data-mod-subs="redis-config">0</b> 订阅</span>
+                </button>
+                <button class="rail-item" data-mod="log-sink" style="opacity:.6">
+                  <div class="rail-ic"><svg class="i" style="width:13px"><use href="#i-layers"/></svg></div>
+                  <div>
+                    <div class="nm">log-sink</div>
+                    <div style="font-size:11px;color:var(--text-3)">日志采集端</div>
+                  </div>
+                  <span class="meta"><b data-mod-subs="log-sink">0</b> 订阅</span>
+                </button>
+              </div>
+              <div class="card-foot" style="padding:9px 13px">
+                <span>点模块名 → 管理订阅它的应用</span>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:14px">
+              <div class="card-head" style="padding:11px 13px">
+                <div class="card-title" style="font-size:13px">模板库</div>
+              </div>
+              <div class="card-body" style="padding:12px 13px">
+                <div class="sec" style="font-size:12.5px;line-height:1.6">5 个模板可实例化，<br>用于快速生成模块骨架。</div>
+                <button class="btn btn-sm" style="margin-top:10px;width:100%">打开模板库</button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="board-bar">
+              <span class="lg"><i class="dot" style="background:var(--danger)"></i>缺必填变量</span>
+              <span class="lg"><i class="dot" style="background:#d97706"></i>模板待同步</span>
+              <span class="lg-note">无标记 = 正常</span>
+              <span style="margin-left:auto" class="lg-note">检查于 2 分钟前</span>
+            </div>
+
+            <div class="apps">
+              <div class="appcard" data-app="payment-service">
+                <div class="appcard-h">
+                  <div class="app-ic">PS</div>
+                  <div style="flex:1;min-width:0">
+                    <div class="app-t">支付服务 <span class="risk" data-risk="payment-service"></span></div>
+                    <div class="app-c">payment-service</div>
+                  </div>
+                  <button class="icon-btn" title="更多"><svg class="i"><use href="#i-more"/></svg></button>
+                </div>
+                <div class="app-d">核心支付链路，含回调与对账。</div>
+                <div class="group">
+                  <div class="group-l">基础</div>
+                  <div class="chips"><span class="chip" data-health="red"><span class="dot"></span>db-config</span><span class="chip" data-health="ok"><span class="dot"></span>cache</span></div>
+                </div>
+                <div class="group">
+                  <div class="group-l">业务</div>
+                  <div class="chips"><span class="chip" data-health="ok"><span class="dot"></span>payment-core</span><span class="chip" data-health="red"><span class="dot"></span>mq-consumer</span></div>
+                </div>
+                <div class="group">
+                  <div class="group-l">订阅</div>
+                  <div class="chips" data-subs="payment-service"></div>
+                </div>
+                <div class="appcard-f">
+                  <span>4 私有模块</span><span>·</span><span><b data-sub-count="payment-service">0</b> 订阅</span>
+                  <span style="margin-left:auto" class="mono">2 个 Token</span>
+                </div>
+              </div>
+
+              <div class="appcard" data-app="order-service">
+                <div class="appcard-h">
+                  <div class="app-ic">OS</div>
+                  <div style="flex:1;min-width:0">
+                    <div class="app-t">订单服务 <span class="risk" data-risk="order-service"></span></div>
+                    <div class="app-c">order-service</div>
+                  </div>
+                  <button class="icon-btn" title="更多"><svg class="i"><use href="#i-more"/></svg></button>
+                </div>
+                <div class="app-d">下单、拆单与履约状态机。</div>
+                <div class="group">
+                  <div class="group-l">基础</div>
+                  <div class="chips"><span class="chip" data-health="ok"><span class="dot"></span>db-config</span><span class="chip" data-health="amber"><span class="dot"></span>cache</span></div>
+                </div>
+                <div class="group">
+                  <div class="group-l">订阅</div>
+                  <div class="chips" data-subs="order-service"></div>
+                </div>
+                <div class="appcard-f">
+                  <span>2 私有模块</span><span>·</span><span><b data-sub-count="order-service">0</b> 订阅</span>
+                  <span style="margin-left:auto" class="mono">1 个 Token</span>
+                </div>
+              </div>
+
+              <div class="appcard" data-app="user-center">
+                <div class="appcard-h">
+                  <div class="app-ic">UC</div>
+                  <div style="flex:1;min-width:0">
+                    <div class="app-t">用户中心 <span class="risk" data-risk="user-center"></span></div>
+                    <div class="app-c">user-center</div>
+                  </div>
+                  <button class="icon-btn" title="更多"><svg class="i"><use href="#i-more"/></svg></button>
+                </div>
+                <div class="app-d">账号、鉴权与用户画像。</div>
+                <div class="group">
+                  <div class="group-l">基础</div>
+                  <div class="chips"><span class="chip" data-health="ok"><span class="dot"></span>db-config</span></div>
+                </div>
+                <div class="group">
+                  <div class="group-l">订阅</div>
+                  <div class="chips" data-subs="user-center"></div>
+                </div>
+                <div class="appcard-f">
+                  <span>1 私有模块</span><span>·</span><span><b data-sub-count="user-center">0</b> 订阅</span>
+                  <span style="margin-left:auto" class="mono">1 个 Token</span>
+                </div>
+              </div>
+
+              <div class="appcard" data-app="api-gateway">
+                <div class="appcard-h">
+                  <div class="app-ic">GW</div>
+                  <div style="flex:1;min-width:0">
+                    <div class="app-t">网关 <span class="risk" data-risk="api-gateway"></span></div>
+                    <div class="app-c">api-gateway</div>
+                  </div>
+                  <button class="icon-btn" title="更多"><svg class="i"><use href="#i-more"/></svg></button>
+                </div>
+                <div class="app-d">统一入口、限流与灰度路由。</div>
+                <div class="group">
+                  <div class="group-l">基础</div>
+                  <div class="chips"><span class="chip" data-health="ok"><span class="dot"></span>route-table</span></div>
+                </div>
+                <div class="group">
+                  <div class="group-l">订阅</div>
+                  <div class="chips" data-subs="api-gateway"></div>
+                </div>
+                <div class="appcard-f">
+                  <span>1 私有模块</span><span>·</span><span><b data-sub-count="api-gateway">0</b> 订阅</span>
+                  <span style="margin-left:auto" class="mono">0 个 Token</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 3. 模块详情 ========== -->
+      <section class="screen" id="s-module">
+        <div class="ph">
+          <div>
+            <h1>数据库配置 <span class="mono" style="font-size:13px;font-weight:400;color:var(--text-3)">payment-service / db-config</span></h1>
+            <div class="sub">12 个变量 · 4 个环境 · 最近更新 2 分钟前（陈亦然）</div>
+          </div>
+          <div class="ph-actions">
+            <button class="btn"><svg class="i"><use href="#i-upload"/></svg>粘贴导入</button>
+            <button class="btn"><svg class="i"><use href="#i-copy"/></svg>复制 dotenv</button>
+            <button class="btn" onclick="copyDeepLink()"><svg class="i"><use href="#i-arrow-r"/></svg>复制深链</button>
+            <button class="btn btn-primary"><svg class="i"><use href="#i-plus"/></svg>变量</button>
+          </div>
+        </div>
+
+        <div class="tplbar">
+          <svg class="i"><use href="#i-sync"/></svg>
+          <span>模板 <b>MySQL 标准配置</b> 有更新：新增 1 项、定义变更 2 项、模板删除 1 项。</span>
+          <button class="btn">查看并同步</button>
+        </div>
+
+        <div class="dl-bar" id="dl-bar" style="display:none">
+          <svg class="i" style="width:15px"><use href="#i-arrow-r"/></svg>
+          <span>已从链接定位到 <b class="mono" id="dl-k"></b><b id="dl-e" class="mono"></b></span>
+          <button class="btn btn-sm" style="margin-left:auto" onclick="clearDeepLink()">清除定位</button>
+        </div>
+
+        <div class="mx-tool">
+          <div class="mx-search">
+            <svg class="i"><use href="#i-search"/></svg>
+            <input id="mx-q" placeholder="搜变量、值、备注" autocomplete="off">
+            <kbd>/</kbd>
+          </div>
+          <button class="pf on" data-pf="all">全部 <i data-c></i></button>
+          <button class="pf" data-pf="DB_">DB_* <i data-c></i></button>
+          <button class="pf" data-pf="REDIS_">REDIS_* <i data-c></i></button>
+          <button class="pf" data-pf="APP_">APP_* <i data-c></i></button>
+          <button class="pf" data-pf="__empty">未配置 <i data-c></i></button>
+          <button class="pf" data-pf="__ov">有环境覆盖 <i data-c></i></button>
+          <span class="mx-count" id="mx-count">显示 <b>12</b> / 12</span>
+        </div>
+
+        <div class="matrix-wrap">
+          <table class="matrix">
+            <thead>
+              <tr>
+                <th class="c-drag"></th>
+                <th class="c-key sticky">变量</th>
+                <th class="c-type">类型</th>
+                <th class="c-remark">备注</th>
+                <th class="c-global">全局值</th>
+                <th class="c-env"><span class="env-head" style="--c:var(--env-dev)"><span class="dot"></span>dev</span></th>
+                <th class="c-env"><span class="env-head" style="--c:var(--env-test)"><span class="dot"></span>test</span></th>
+                <th class="c-env"><span class="env-head" style="--c:var(--env-staging)"><span class="dot"></span>staging</span></th>
+                <th class="c-env"><span class="env-head" style="--c:var(--env-prod)"><span class="dot"></span>prod</span><span class="env-count" title="2 个必填项在本环境无值">2</span></th>
+                <th class="c-ops"></th>
+              </tr>
+            </thead>
+            <tbody id="mx-body">
+              <tr data-key="DB_HOST" data-search="主库地址 10.0.1.5 10.0.3.8 10.0.2.9">
+                <td class="c-drag"><span class="grip"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td class="c-key sticky"><span class="key">DB_HOST</span><span class="req">*</span></td>
+                <td class="c-type"><span class="tag tag-plain">明文</span></td>
+                <td class="c-remark muted">主库地址</td>
+                <td class="c-global"><button class="cell is-val" data-key="DB_HOST" data-env="global"><span class="txt">10.0.1.5</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_HOST" data-env="dev"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-val ov" data-key="DB_HOST" data-env="test"><span class="txt">10.0.3.8</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_HOST" data-env="staging"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-val ov" data-key="DB_HOST" data-env="prod"><span class="txt">10.0.2.9</span></button></td>
+                <td class="c-ops"><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr data-key="DB_PORT" data-search="端口 5432">
+                <td class="c-drag"><span class="grip"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td class="c-key sticky"><span class="key">DB_PORT</span><span class="req">*</span></td>
+                <td class="c-type"><span class="tag tag-plain">明文</span></td>
+                <td class="c-remark muted">端口</td>
+                <td class="c-global"><button class="cell is-val" data-key="DB_PORT" data-env="global"><span class="txt">5432</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_PORT" data-env="dev"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_PORT" data-env="test"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_PORT" data-env="staging"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_PORT" data-env="prod"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-ops"><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr data-key="DB_NAME" data-search="库名 payment payment_stg">
+                <td class="c-drag"><span class="grip"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td class="c-key sticky"><span class="key">DB_NAME</span><span class="req">*</span></td>
+                <td class="c-type"><span class="tag tag-plain">明文</span></td>
+                <td class="c-remark muted">库名</td>
+                <td class="c-global"><button class="cell is-val" data-key="DB_NAME" data-env="global"><span class="txt">payment</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_NAME" data-env="dev"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env col-focus" style="position:relative"><input class="cell-input" value="payment_test"></td>
+                <td class="c-env"><button class="cell is-val ov" data-key="DB_NAME" data-env="staging"><span class="txt">payment_stg</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_NAME" data-env="prod"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-ops"><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr data-key="DB_PASSWORD" data-search="连接密码 ">
+                <td class="c-drag"><span class="grip"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td class="c-key sticky"><span class="key">DB_PASSWORD</span><span class="req">*</span></td>
+                <td class="c-type"><span class="tag tag-lock"><svg class="i" style="width:10px;height:10px"><use href="#i-lock"/></svg>加密</span></td>
+                <td class="c-remark muted">连接密码</td>
+                <td class="c-global"><button class="cell is-secret" data-key="DB_PASSWORD" data-env="global"><span>••••••</span><span class="eye"><svg class="i" style="width:14px"><use href="#i-eye"/></svg></span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_PASSWORD" data-env="dev"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-secret ov" data-key="DB_PASSWORD" data-env="test"><span>••••••</span><span class="eye"><svg class="i" style="width:14px"><use href="#i-eye"/></svg></span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_PASSWORD" data-env="staging"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-empty" data-key="DB_PASSWORD" data-env="prod"><span class="txt">未配置</span></button></td>
+                <td class="c-ops"><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr data-key="DB_POOL_MAX" data-search="最大连接数（0 = 不限） 20 50">
+                <td class="c-drag"><span class="grip"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td class="c-key sticky"><span class="key">DB_POOL_MAX</span></td>
+                <td class="c-type"><span class="tag tag-plain">明文</span></td>
+                <td class="c-remark muted">最大连接数（0 = 不限）</td>
+                <td class="c-global"><button class="cell is-val" data-key="DB_POOL_MAX" data-env="global"><span class="txt">20</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_POOL_MAX" data-env="dev"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_POOL_MAX" data-env="test"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-val ov" data-key="DB_POOL_MAX" data-env="staging"><span class="txt">50</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_POOL_MAX" data-env="prod"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-ops"><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr data-key="DB_SSL" data-search="是否启用 tls ">
+                <td class="c-drag"><span class="grip"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td class="c-key sticky"><span class="key">DB_SSL</span><span class="req">*</span></td>
+                <td class="c-type"><span class="tag tag-plain">明文</span></td>
+                <td class="c-remark muted">是否启用 TLS</td>
+                <td class="c-global"><button class="cell is-empty" data-key="DB_SSL" data-env="global"><span class="txt">未配置</span></button></td>
+                <td class="c-env"><button class="cell is-empty" data-key="DB_SSL" data-env="dev"><span class="txt">未配置</span></button></td>
+                <td class="c-env"><button class="cell is-empty" data-key="DB_SSL" data-env="test"><span class="txt">未配置</span></button></td>
+                <td class="c-env"><button class="cell is-empty" data-key="DB_SSL" data-env="staging"><span class="txt">未配置</span></button></td>
+                <td class="c-env"><button class="cell is-empty" data-key="DB_SSL" data-env="prod"><span class="txt">未配置</span></button></td>
+                <td class="c-ops"><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr data-key="DB_STATEMENT_TIMEOUT_MS" data-search="慢查询熔断（毫秒） 3000">
+                <td class="c-drag"><span class="grip"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td class="c-key sticky"><span class="key">DB_STATEMENT_TIMEOUT_MS</span></td>
+                <td class="c-type"><span class="tag tag-plain">明文</span></td>
+                <td class="c-remark muted">慢查询熔断（毫秒）</td>
+                <td class="c-global"><button class="cell is-val" data-key="DB_STATEMENT_TIMEOUT_MS" data-env="global"><span class="txt">3000</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_STATEMENT_TIMEOUT_MS" data-env="dev"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_STATEMENT_TIMEOUT_MS" data-env="test"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_STATEMENT_TIMEOUT_MS" data-env="staging"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="DB_STATEMENT_TIMEOUT_MS" data-env="prod"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-ops"><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr data-key="REDIS_HOST" data-search="缓存地址 10.0.1.9 127.0.0.1 10.0.3.20 10.0.2.20">
+                <td class="c-drag"><span class="grip"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td class="c-key sticky"><span class="key">REDIS_HOST</span><span class="req">*</span></td>
+                <td class="c-type"><span class="tag tag-plain">明文</span></td>
+                <td class="c-remark muted">缓存地址</td>
+                <td class="c-global"><button class="cell is-val" data-key="REDIS_HOST" data-env="global"><span class="txt">10.0.1.9</span></button></td>
+                <td class="c-env"><button class="cell is-val ov" data-key="REDIS_HOST" data-env="dev"><span class="txt">127.0.0.1</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="REDIS_HOST" data-env="test"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-val ov" data-key="REDIS_HOST" data-env="staging"><span class="txt">10.0.3.20</span></button></td>
+                <td class="c-env"><button class="cell is-val ov" data-key="REDIS_HOST" data-env="prod"><span class="txt">10.0.2.20</span></button></td>
+                <td class="c-ops"><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr data-key="REDIS_PORT" data-search="缓存端口 6379">
+                <td class="c-drag"><span class="grip"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td class="c-key sticky"><span class="key">REDIS_PORT</span></td>
+                <td class="c-type"><span class="tag tag-plain">明文</span></td>
+                <td class="c-remark muted">缓存端口</td>
+                <td class="c-global"><button class="cell is-val" data-key="REDIS_PORT" data-env="global"><span class="txt">6379</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="REDIS_PORT" data-env="dev"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="REDIS_PORT" data-env="test"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="REDIS_PORT" data-env="staging"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="REDIS_PORT" data-env="prod"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-ops"><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr data-key="REDIS_PASSWORD" data-search="缓存密码 ">
+                <td class="c-drag"><span class="grip"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td class="c-key sticky"><span class="key">REDIS_PASSWORD</span></td>
+                <td class="c-type"><span class="tag tag-lock"><svg class="i" style="width:10px;height:10px"><use href="#i-lock"/></svg>加密</span></td>
+                <td class="c-remark muted">缓存密码</td>
+                <td class="c-global"><button class="cell is-secret" data-key="REDIS_PASSWORD" data-env="global"><span>••••••</span><span class="eye"><svg class="i" style="width:14px"><use href="#i-eye"/></svg></span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="REDIS_PASSWORD" data-env="dev"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-secret ov" data-key="REDIS_PASSWORD" data-env="test"><span>••••••</span><span class="eye"><svg class="i" style="width:14px"><use href="#i-eye"/></svg></span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="REDIS_PASSWORD" data-env="staging"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-secret ov" data-key="REDIS_PASSWORD" data-env="prod"><span>••••••</span><span class="eye"><svg class="i" style="width:14px"><use href="#i-eye"/></svg></span></button></td>
+                <td class="c-ops"><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr data-key="APP_LOG_LEVEL" data-search="日志级别 info debug">
+                <td class="c-drag"><span class="grip"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td class="c-key sticky"><span class="key">APP_LOG_LEVEL</span></td>
+                <td class="c-type"><span class="tag tag-plain">明文</span></td>
+                <td class="c-remark muted">日志级别</td>
+                <td class="c-global"><button class="cell is-val" data-key="APP_LOG_LEVEL" data-env="global"><span class="txt">info</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="APP_LOG_LEVEL" data-env="dev"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="APP_LOG_LEVEL" data-env="test"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-val ov" data-key="APP_LOG_LEVEL" data-env="staging"><span class="txt">debug</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="APP_LOG_LEVEL" data-env="prod"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-ops"><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr data-key="APP_TZ" data-search="时区 asia/shanghai">
+                <td class="c-drag"><span class="grip"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td class="c-key sticky"><span class="key">APP_TZ</span></td>
+                <td class="c-type"><span class="tag tag-plain">明文</span></td>
+                <td class="c-remark muted">时区</td>
+                <td class="c-global"><button class="cell is-val" data-key="APP_TZ" data-env="global"><span class="txt">Asia/Shanghai</span></button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="APP_TZ" data-env="dev"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="APP_TZ" data-env="test"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="APP_TZ" data-env="staging"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-env"><button class="cell is-inherit" data-key="APP_TZ" data-env="prod"><span class="arrow">↳</span>继承</button></td>
+                <td class="c-ops"><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr class="mx-empty" id="mx-empty" style="display:none">
+                <td colspan="10">
+                  <div class="e-t">没有匹配的变量</div>
+                  <div class="e-s">试试变量名前缀，或清空筛选条件</div>
+                  <button onclick="resetFilter()">清空筛选</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="grid-2" style="margin-top:16px;grid-template-columns:320px 1fr">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">文件<span class="n">3</span></div>
+              <button class="btn btn-ghost btn-sm"><svg class="i" style="width:14px"><use href="#i-upload"/></svg>上传</button>
+            </div>
+            <div class="card-body" style="padding:4px 16px">
+              <div class="file-row">
+                <div class="file-ic"><svg class="i" style="width:14px"><use href="#i-file"/></svg></div>
+                <div style="flex:1;min-width:0">
+                  <div class="mono" style="font-size:12.5px">schema.sql</div>
+                  <div style="font-size:11px;color:var(--text-3)">prod · v3 · 24.1 KB</div>
+                </div>
+                <button class="icon-btn"><svg class="i"><use href="#i-download"/></svg></button>
+              </div>
+              <div class="file-row">
+                <div class="file-ic"><svg class="i" style="width:14px"><use href="#i-file"/></svg></div>
+                <div style="flex:1;min-width:0">
+                  <div class="mono" style="font-size:12.5px">ca.pem</div>
+                  <div style="font-size:11px;color:var(--text-3)">prod · v1 · 3.2 KB</div>
+                </div>
+                <button class="icon-btn"><svg class="i"><use href="#i-download"/></svg></button>
+              </div>
+              <div class="file-row">
+                <div class="file-ic"><svg class="i" style="width:14px"><use href="#i-file"/></svg></div>
+                <div style="flex:1;min-width:0">
+                  <div class="mono" style="font-size:12.5px">init-data.json</div>
+                  <div style="font-size:11px;color:var(--text-3)">dev · v2 · 812 B</div>
+                </div>
+                <button class="icon-btn"><svg class="i"><use href="#i-download"/></svg></button>
+              </div>
+            </div>
+            <div class="card-foot"><span>单文件 ≤ 50MB · 总量 128MB / 500MB</span></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="card-title">成员<span class="n">4</span></div>
+              <button class="btn btn-ghost btn-sm"><svg class="i" style="width:14px"><use href="#i-plus"/></svg>添加成员</button>
+            </div>
+            <div class="card-body" style="padding:4px 16px 12px">
+              <div class="member">
+                <div class="avatar" style="width:26px;height:26px;font-size:11px">陈</div>
+                <div style="flex:1"><div class="nm">陈亦然</div><div class="em">chenyiran@corp.com</div></div>
+                <span class="tag tag-shared">模块管理员</span>
+              </div>
+              <div class="member">
+                <div class="avatar" style="width:26px;height:26px;font-size:11px;background:#eef7f2;color:#0f766e;border-color:#d3ece1">林</div>
+                <div style="flex:1"><div class="nm">林可</div><div class="em">linke@corp.com</div></div>
+                <span class="tag tag-plain">操作员</span>
+              </div>
+              <div class="member">
+                <div class="avatar" style="width:26px;height:26px;font-size:11px;background:#fdf4ff;color:#86198f;border-color:#f5d0fe">赵</div>
+                <div style="flex:1"><div class="nm">赵明</div><div class="em">zhaoming@corp.com</div></div>
+                <span class="tag tag-plain">操作员</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 4. 模板库 ========== -->
+      <section class="screen" id="s-templates">
+        <div class="ph">
+          <div>
+            <h1>模板库</h1>
+            <div class="sub">模板定义变量骨架；模块保持关联，按 diff 选择性同步。</div>
+          </div>
+          <div class="ph-actions"><button class="btn btn-primary"><svg class="i"><use href="#i-plus"/></svg>新建模板</button></div>
+        </div>
+
+        <div class="split">
+          <div class="card">
+            <div class="card-head"><div class="card-title">全部模板<span class="n">5</span></div></div>
+            <div class="card-body" style="padding:6px">
+              <div class="list-item on">
+                <div style="flex:1">
+                  <div class="t">MySQL 标准配置</div>
+                  <div class="s">mysql-standard · 12 变量</div>
+                </div>
+                <span class="tag tag-warn">3 模块待同步</span>
+              </div>
+              <div class="list-item">
+                <div style="flex:1">
+                  <div class="t">Redis 连接</div>
+                  <div class="s">redis-conn · 8 变量</div>
+                </div>
+              </div>
+              <div class="list-item">
+                <div style="flex:1">
+                  <div class="t">消息队列消费者</div>
+                  <div class="s">mq-consumer · 9 变量</div>
+                </div>
+              </div>
+              <div class="list-item">
+                <div style="flex:1">
+                  <div class="t">通知渠道</div>
+                  <div class="s">notify · 6 变量</div>
+                </div>
+              </div>
+              <div class="list-item">
+                <div style="flex:1">
+                  <div class="t">基础服务</div>
+                  <div class="s">base-service · 5 变量</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <div class="card-title" style="font-size:14px">MySQL 标准配置</div>
+                <div class="muted mono" style="font-size:11.5px;margin-top:2px">mysql-standard · 更新于 2026-10-18 14:22</div>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-sm">从模块另存</button>
+                <button class="btn btn-sm btn-primary">编辑定义</button>
+              </div>
+            </div>
+            <table class="def-table">
+              <thead><tr><th style="width:44px">#</th><th>变量 key</th><th style="width:84px">类型</th><th style="width:72px">必填</th><th>默认值</th><th>备注</th></tr></thead>
+              <tbody>
+                <tr><td class="muted num">1</td><td class="mono t-strong">DB_HOST</td><td><span class="tag tag-plain">明文</span></td><td><span class="tag tag-plain">必填</span></td><td class="mono muted">—</td><td class="muted">主库地址</td></tr>
+                <tr><td class="muted num">2</td><td class="mono t-strong">DB_PORT</td><td><span class="tag tag-plain">明文</span></td><td><span class="tag tag-plain">必填</span></td><td class="mono">5432</td><td class="muted">端口</td></tr>
+                <tr><td class="muted num">3</td><td class="mono t-strong">DB_NAME</td><td><span class="tag tag-plain">明文</span></td><td><span class="tag tag-plain">必填</span></td><td class="mono muted">—</td><td class="muted">库名</td></tr>
+                <tr><td class="muted num">4</td><td class="mono t-strong">DB_PASSWORD</td><td><span class="tag tag-lock"><svg class="i" style="width:10px;height:10px"><use href="#i-lock"/></svg>加密</span></td><td><span class="tag tag-plain">必填</span></td><td class="muted" style="font-size:11.5px">不落库</td><td class="muted">连接密码</td></tr>
+                <tr><td class="muted num">5</td><td class="mono t-strong">DB_POOL_MAX</td><td><span class="tag tag-plain">明文</span></td><td class="muted">—</td><td class="mono">20</td><td class="muted">最大连接数</td></tr>
+                <tr><td class="muted num">6</td><td class="mono t-strong">DB_SSL</td><td><span class="tag tag-plain">明文</span></td><td><span class="tag tag-plain">必填</span></td><td class="mono">false</td><td class="muted">是否启用 TLS</td></tr>
+              </tbody>
+            </table>
+            <div class="card-foot">
+              <span>实例化后：明文默认值写入全局值，加密类型默认值不落库</span>
+              <button class="btn btn-sm">用此模板建模块</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 5. 环境管理 ========== -->
+      <section class="screen" id="s-envs">
+        <div class="ph">
+          <div>
+            <h1>环境管理</h1>
+            <div class="sub">父环境构成继承链；变量未覆盖时沿父链回溯取值。</div>
+          </div>
+          <div class="ph-actions"><button class="btn btn-primary"><svg class="i"><use href="#i-plus"/></svg>新建环境</button></div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-head"><div class="card-title">继承链</div><span class="muted" style="font-size:12px">成环配置将被拒绝保存</span></div>
+          <div class="card-body">
+            <div class="chain">
+              <div class="chain-node"><span class="dot" style="--c:var(--env-dev);background:var(--env-dev)"></span><b class="mono" style="font-size:12px">dev</b><span class="muted">开发</span></div>
+              <svg class="i chain-arrow" style="width:14px"><use href="#i-arrow-r"/></svg>
+              <div class="chain-node"><span class="dot" style="--c:var(--env-test);background:var(--env-test)"></span><b class="mono" style="font-size:12px">test</b><span class="muted">测试</span></div>
+              <svg class="i chain-arrow" style="width:14px"><use href="#i-arrow-r"/></svg>
+              <div class="chain-node"><span class="dot" style="--c:var(--env-staging);background:var(--env-staging)"></span><b class="mono" style="font-size:12px">staging</b><span class="muted">预发</span></div>
+              <svg class="i chain-arrow" style="width:14px"><use href="#i-arrow-r"/></svg>
+              <div class="chain-node"><span class="dot" style="--c:var(--env-prod);background:var(--env-prod)"></span><b class="mono" style="font-size:12px">prod</b><span class="muted">生产</span><span class="tag tag-danger">默认</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">全部环境<span class="n">4</span></div></div>
+          <table>
+            <thead><tr><th style="width:44px"></th><th>环境</th><th>code</th><th>父环境</th><th>绑定模块</th><th>默认</th><th style="width:120px">操作</th></tr></thead>
+            <tbody>
+              <tr><td><span class="grip" style="opacity:.6"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td><b>开发</b></td><td class="mono muted">dev</td><td class="muted">—</td><td class="num">9</td><td class="muted">—</td>
+                <td><button class="btn btn-ghost btn-sm">编辑</button><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td></tr>
+              <tr><td><span class="grip" style="opacity:.6"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td><b>测试</b></td><td class="mono muted">test</td><td class="mono muted">dev</td><td class="num">8</td><td class="muted">—</td>
+                <td><button class="btn btn-ghost btn-sm">编辑</button><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td></tr>
+              <tr><td><span class="grip" style="opacity:.6"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td><b>预发</b></td><td class="mono muted">staging</td><td class="mono muted">test</td><td class="num">6</td><td class="muted">—</td>
+                <td><button class="btn btn-ghost btn-sm">编辑</button><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td></tr>
+              <tr><td><span class="grip" style="opacity:.6"><svg class="i"><use href="#i-grip"/></svg></span></td>
+                <td><b>生产</b></td><td class="mono muted">prod</td><td class="mono muted">staging</td><td class="num">7</td><td><span class="tag tag-danger">默认</span></td>
+                <td><button class="btn btn-ghost btn-sm">编辑</button><button class="icon-btn"><svg class="i"><use href="#i-more"/></svg></button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========== 6. 用户管理 ========== -->
+      <section class="screen" id="s-users">
+        <div class="ph">
+          <div><h1>用户管理</h1><div class="sub">全局角色仅区分系统管理员 / 普通用户；模块权限在模块内授权。</div></div>
+          <div class="ph-actions"><div class="field"><svg class="i" style="width:14px"><use href="#i-search"/></svg><span class="muted">搜索姓名 / 邮箱</span></div></div>
+        </div>
+        <div class="card">
+          <table>
+            <thead><tr><th>用户</th><th>GitLab</th><th>全局角色</th><th>参与模块</th><th>最后登录</th><th style="width:110px">操作</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div style="display:flex;align-items:center;gap:9px"><div class="avatar">陈</div><div><div class="t-strong">陈亦然</div><div style="font-size:11.5px;color:var(--text-3)">chenyiran@corp.com</div></div></div></td>
+                <td class="mono muted">chenyiran</td>
+                <td><span class="tag tag-shared">系统管理员</span></td>
+                <td class="num">11</td><td class="muted">2 分钟前</td>
+                <td><button class="btn btn-ghost btn-sm">改角色</button></td>
+              </tr>
+              <tr>
+                <td><div style="display:flex;align-items:center;gap:9px"><div class="avatar" style="background:#eef7f2;color:#0f766e;border-color:#d3ece1">林</div><div><div class="t-strong">林可</div><div style="font-size:11.5px;color:var(--text-3)">linke@corp.com</div></div></div></td>
+                <td class="mono muted">linke</td>
+                <td><span class="tag tag-plain">普通用户</span></td>
+                <td class="num">4</td><td class="muted">1 小时前</td>
+                <td><button class="btn btn-ghost btn-sm">改角色</button></td>
+              </tr>
+              <tr>
+                <td><div style="display:flex;align-items:center;gap:9px"><div class="avatar" style="background:#fdf4ff;color:#86198f;border-color:#f5d0fe">赵</div><div><div class="t-strong">赵明</div><div style="font-size:11.5px;color:var(--text-3)">zhaoming@corp.com</div></div></div></td>
+                <td class="mono muted">zhaoming</td>
+                <td><span class="tag tag-plain">普通用户</span></td>
+                <td class="num">2</td><td class="muted">昨天 18:04</td>
+                <td><button class="btn btn-ghost btn-sm">改角色</button></td>
+              </tr>
+              <tr>
+                <td><div style="display:flex;align-items:center;gap:9px"><div class="avatar" style="background:#fff7ed;color:#9a3412;border-color:#fed7aa">周</div><div><div class="t-strong">周雯</div><div style="font-size:11.5px;color:var(--text-3)">zhouwen@corp.com</div></div></div></td>
+                <td class="mono muted">zhouwen</td>
+                <td><span class="tag tag-plain">普通用户</span></td>
+                <td class="num">0</td><td class="muted">3 天前</td>
+                <td><button class="btn btn-ghost btn-sm">改角色</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========== 7. Token ========== -->
+      <section class="screen" id="s-tokens">
+        <div class="ph">
+          <div><h1>Token 管理</h1><div class="sub">Token 作用域 = 所属应用（含订阅的共享模块），全环境通用。</div></div>
+          <div class="ph-actions">
+            <div class="field"><span class="muted">应用</span><b style="font-size:12.5px">payment-service</b><svg class="i" style="width:13px;color:#8b93a1"><use href="#i-chevron"/></svg></div>
+            <button class="btn btn-primary"><svg class="i"><use href="#i-key"/></svg>签发 Token</button>
+          </div>
+        </div>
+
+        <div class="callout info" style="margin-bottom:14px">
+          <svg class="i" style="margin-top:1px"><use href="#i-alert"/></svg>
+          <div><b>明文只展示一次。</b>关闭后不可再次查看，只能吊销重签。请立即复制到 CI 变量中。</div>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-body" style="padding:14px 16px">
+            <div style="font-size:12px;color:var(--text-3);margin-bottom:6px">新 Token（ci-prod）已生成</div>
+            <div class="secret-box">
+              <span style="flex:1">chub_7f3a91c4e8b2d05f6a1c93bb4d2e77f8</span>
+              <button class="btn btn-sm" style="background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:#cbd5e1">复制</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <table>
+            <thead><tr><th>名称</th><th>前缀</th><th>状态</th><th>到期时间</th><th>最近使用</th><th>创建</th><th style="width:90px"></th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="t-strong">ci-prod</td><td class="mono muted">chub_7f3a…</td>
+                <td><span class="tag tag-warn">5 天后到期</span></td>
+                <td class="muted num">2026-10-24 12:00</td><td class="muted">12 分钟前</td><td class="muted">2026-04-24</td>
+                <td><button class="btn btn-danger btn-sm">吊销</button></td>
+              </tr>
+              <tr>
+                <td class="t-strong">ci-staging</td><td class="mono muted">chub_2b81…</td>
+                <td><span class="tag tag-ok">有效</span></td>
+                <td class="muted num">2027-01-01 00:00</td><td class="muted">1 小时前</td><td class="muted">2026-01-02</td>
+                <td><button class="btn btn-danger btn-sm">吊销</button></td>
+              </tr>
+              <tr style="opacity:.6">
+                <td class="t-strong">ci-legacy</td><td class="mono muted">chub_91cd…</td>
+                <td><span class="tag tag-danger">已吊销</span></td>
+                <td class="muted">—</td><td class="muted">30 天前</td><td class="muted">2025-11-08</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========== 8. 审计日志 ========== -->
+      <section class="screen" id="s-audit">
+        <div class="ph">
+          <div><h1>审计日志</h1><div class="sub">保留 7 天；高危操作红色标记。流水线 API 调用不进审计。</div></div>
+          <div class="ph-actions"><button class="btn"><svg class="i"><use href="#i-download"/></svg>导出</button></div>
+        </div>
+
+        <div class="filters">
+          <div class="field"><span class="muted">动作</span><b style="font-size:12.5px">全部</b><svg class="i" style="width:13px;color:#8b93a1"><use href="#i-chevron"/></svg></div>
+          <div class="field"><span class="muted">用户</span><b style="font-size:12.5px">全部</b><svg class="i" style="width:13px;color:#8b93a1"><use href="#i-chevron"/></svg></div>
+          <div class="field mono">2026-10-12 → 2026-10-19</div>
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-2)"><span class="checkbox on"><svg class="i" style="width:11px"><use href="#i-check"/></svg></span>仅看高危</label>
+        </div>
+
+        <div class="card">
+          <table>
+            <thead><tr><th style="width:150px">时间</th><th>用户</th><th>动作</th><th>对象</th><th>详情</th><th>IP</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="mono muted" style="font-size:11.5px">10-19 17:04:22</td>
+                <td>陈亦然</td>
+                <td><span class="tag tag-danger">查看加密明文</span></td>
+                <td class="mono">DB_PASSWORD · prod</td>
+                <td class="muted">db-config</td><td class="mono muted" style="font-size:11.5px">10.8.2.31</td>
+              </tr>
+              <tr>
+                <td class="mono muted" style="font-size:11.5px">10-19 16:51:08</td>
+                <td>陈亦然</td>
+                <td><span class="tag tag-plain">修改变量</span></td>
+                <td class="mono">DB_HOST</td>
+                <td class="muted">10.0.2.7 → 10.0.2.9（prod）</td><td class="mono muted" style="font-size:11.5px">10.8.2.31</td>
+              </tr>
+              <tr>
+                <td class="mono muted" style="font-size:11.5px">10-19 15:20:44</td>
+                <td>林可</td>
+                <td><span class="tag tag-danger">删除文件</span></td>
+                <td class="mono">init-data.json</td>
+                <td class="muted">cache · dev · v1</td><td class="mono muted" style="font-size:11.5px">10.8.4.17</td>
+              </tr>
+              <tr>
+                <td class="mono muted" style="font-size:11.5px">10-19 11:02:10</td>
+                <td>陈亦然</td>
+                <td><span class="tag tag-plain">签发 Token</span></td>
+                <td class="mono">chub_7f3a</td>
+                <td class="muted">payment-service / ci-prod</td><td class="mono muted" style="font-size:11.5px">10.8.2.31</td>
+              </tr>
+              <tr>
+                <td class="mono muted" style="font-size:11.5px">10-19 09:14:55</td>
+                <td>赵明</td>
+                <td><span class="tag tag-plain">登录</span></td>
+                <td class="muted">—</td>
+                <td class="muted">GitLab OAuth</td><td class="mono muted" style="font-size:11.5px">10.8.6.22</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="card-foot"><span>共 1,284 条 · 第 1 / 26 页</span><div style="display:flex;gap:6px"><button class="btn btn-sm">上一页</button><button class="btn btn-sm">下一页</button></div></div>
+        </div>
+      </section>
+
+      <!-- ========== 9. 备份 ========== -->
+      <section class="screen" id="s-backups">
+        <div class="ph">
+          <div><h1>备份恢复</h1><div class="sub">每日 02:00 自动备份，保留最近 3 份；包内加密变量为密文，不含主密钥。</div></div>
+          <div class="ph-actions"><button class="btn btn-primary"><svg class="i"><use href="#i-archive"/></svg>立即备份</button></div>
+        </div>
+
+        <div class="split" style="grid-template-columns:1fr 380px">
+          <div class="card">
+            <div class="card-head"><div class="card-title">备份记录<span class="n">3</span></div></div>
+            <table>
+              <thead><tr><th>文件名</th><th>大小</th><th>类型</th><th>生成时间</th><th style="width:80px"></th></tr></thead>
+              <tbody>
+                <tr><td class="mono" style="font-size:12px">fcloud-backup-20261019-020000.tar.gz</td><td class="num muted">18.4 MB</td><td><span class="tag tag-plain">定时</span></td><td class="muted num">10-19 02:00</td><td><button class="btn btn-ghost btn-sm">下载</button></td></tr>
+                <tr><td class="mono" style="font-size:12px">fcloud-backup-20261018-020001.tar.gz</td><td class="num muted">18.2 MB</td><td><span class="tag tag-plain">定时</span></td><td class="muted num">10-18 02:00</td><td><button class="btn btn-ghost btn-sm">下载</button></td></tr>
+                <tr><td class="mono" style="font-size:12px">fcloud-backup-20261017-154230.tar.gz</td><td class="num muted">17.9 MB</td><td><span class="tag tag-shared">手动</span></td><td class="muted num">10-17 15:42</td><td><button class="btn btn-ghost btn-sm">下载</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><div class="card-title">从备份恢复</div></div>
+            <div class="card-body">
+              <div style="border:1.5px dashed var(--border-2);border-radius:var(--r);padding:22px;text-align:center;color:var(--text-3);font-size:12.5px">
+                <svg class="i" style="width:22px;height:22px;color:#c3c9d4"><use href="#i-archive"/></svg>
+                <div style="margin-top:8px">拖拽 .tar.gz 到此处，或点击选择</div>
+              </div>
+
+              <div style="margin-top:16px;font-size:12.5px;font-weight:600">恢复策略</div>
+              <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
+                <div class="diff-row" style="margin:0"><span class="radio on"></span><div><div style="font-size:12.5px;font-weight:500">ABORT（默认）</div><div style="font-size:11.5px;color:var(--text-3)">发现冲突整体回滚并列出冲突项</div></div></div>
+                <div class="diff-row" style="margin:0"><span class="radio"></span><div><div style="font-size:12.5px;font-weight:500">MERGE</div><div style="font-size:11.5px;color:var(--text-3)">按自然键跳过已存在，仅补缺失</div></div></div>
+                <div class="diff-row" style="margin:0"><span class="radio"></span><div><div style="font-size:12.5px;font-weight:500;color:var(--danger)">OVERWRITE</div><div style="font-size:11.5px;color:var(--text-3)">清空业务表后全量导入，需输入确认词</div></div></div>
+              </div>
+
+              <div class="callout warn" style="margin-top:14px">
+                <svg class="i" style="margin-top:1px"><use href="#i-alert"/></svg>
+                <span>换过主密钥的旧备份，加密变量无法解密。</span>
+              </div>
+              <button class="btn btn-primary" style="width:100%;margin-top:12px">开始恢复</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 10. 流水线接入 ========== -->
+      <section class="screen" id="s-docs">
+        <div class="ph">
+          <div><h1>流水线接入</h1><div class="sub">三个只读接口；变量值不会被写入任何服务端日志。</div></div>
+          <div class="ph-actions"><button class="btn"><svg class="i"><use href="#i-copy"/></svg>复制全部示例</button></div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-head"><div class="card-title">1 · 拉取变量（dotenv）</div><span class="tag tag-plain">GET</span></div>
+          <div class="card-body">
+<div class="code"><span class="code-lang">bash</span><span class="c"># modules 必填，逗号分隔；按请求顺序输出</span>
+curl -sS \
+  -H <span class="s">"Authorization: Bearer $FCLOUD_TOKEN"</span> \
+  <span class="s">"https://hub.example.com/api/v1/pipeline/config?application=payment-service&environment=prod&modules=db-config,common-notify"</span>
+<span class="c"># 响应 text/plain，每个模块以 # module: {code} 开头</span></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-head"><div class="card-title">2 · 批量下载文件（tar.gz）</div><span class="tag tag-plain">POST</span></div>
+          <div class="card-body">
+<div class="code"><span class="code-lang">bash</span>curl -sS -X POST \
+  -H <span class="s">"Authorization: Bearer $FCLOUD_TOKEN"</span> \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d <span class="s">'{"environment":"prod","modules":["db-config"],"files":["schema.sql"]}'</span> \
+  <span class="s">"https://hub.example.com/api/v1/pipeline/artifacts"</span> -o artifacts.tar.gz</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><div class="card-title">错误码</div></div>
+            <div class="card-body" style="padding:4px 16px 10px">
+              <div class="kv"><span class="k">401</span><span class="v">Token 缺失 / 无效 / 过期 / 吊销</span></div>
+              <div class="kv"><span class="k">403</span><span class="v">模块不属于该应用</span></div>
+              <div class="kv"><span class="k">400</span><span class="v">modules 缺失，或模块未绑定该环境</span></div>
+              <div class="kv"><span class="k">404</span><span class="v">文件不存在</span></div>
+              <div class="kv"><span class="k">429</span><span class="v">超过 60 次 / 分钟</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="card-title">dotenv 转义规则</div></div>
+            <div class="card-body" style="padding:12px 16px">
+<div class="code" style="padding:12px 14px"><span class="c"># 含空格 / # / 单引号 / 换行 / $ 时</span>
+DB_PASSWORD=<span class="s">'p@ss word'</span>
+CERT=<span class="s">'it'\''s fine'</span>
+PLAIN=10.0.2.9</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 11. 登录 ========== -->
+      <section class="screen" id="s-login">
+        <div class="login-wrap">
+          <div>
+            <div class="login-card">
+              <div class="login-logo"><svg class="i" style="width:22px;height:22px"><use href="#i-cloud"/></svg></div>
+              <h2>登录 fcloud-ci-hub</h2>
+              <p>使用公司 GitLab 账号登录<br>配置分发中心</p>
+              <button class="gitlab-btn">
+                <svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor"><path d="M23 13.2 12 21 1 13.2l2.2-6.9L5 12h14l1.8-5.7L23 13.2Z"/></svg>
+                使用 GitLab 登录
+              </button>
+              <label class="remember"><span class="checkbox"><svg class="i" style="width:11px"><use href="#i-check"/></svg></span>记住我（7 天）</label>
+              <div class="login-foot">首次登录自动创建账号 · 空库首位登录者将成为系统管理员</div>
+            </div>
+            <div style="text-align:center;margin-top:18px;font-size:11.5px;color:var(--text-3)">© 2026 fcloud · 配置分发中心 v1.0</div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- 共享模块 · 订阅应用（反向入口） -->
+<aside class="drawer" id="dw2">
+  <div class="drawer-h">
+    <h3 style="display:flex;align-items:center;gap:8px"><span class="mono" id="dw2-t" style="font-size:14px"></span><span class="tag tag-shared">共享</span></h3>
+    <button class="icon-btn" onclick="toggleDrawer2(false)"><svg class="i"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="drawer-b">
+    <div id="dw2-desc" style="font-size:12.5px;color:var(--text-2)"></div>
+    <div class="callout info" style="margin:14px 0">
+      <svg class="i" style="margin-top:1px"><use href="#i-layers"/></svg>
+      <span>订阅后该应用会拿到这个模块的变量与文件；取消订阅只解除引用，<b>模块与已填的值都保留</b>。</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="font-size:12px;font-weight:600;color:var(--text-2)">订阅应用</div>
+      <div style="font-size:11.5px;color:var(--text-3)" id="dw2-count"></div>
+    </div>
+    <div id="dw2-list"></div>
+  </div>
+  <div class="drawer-f" style="justify-content:space-between">
+    <span style="font-size:11.5px;color:var(--text-3)">勾选即生效</span>
+    <button class="btn btn-primary" onclick="toggleDrawer2(false)">完成</button>
+  </div>
+</aside>
+
+<!-- 模板同步抽屉（演示） -->
+<div class="overlay" id="ov"></div>
+<aside class="drawer" id="dw">
+  <div class="drawer-h">
+    <h3>模板同步 · MySQL 标准配置</h3>
+    <button class="icon-btn" onclick="toggleDrawer(false)"><svg class="i"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="drawer-b">
+    <div class="callout info" style="margin-bottom:14px">
+      <svg class="i" style="margin-top:1px"><use href="#i-alert"/></svg>
+      <span>同步只补充/更新定义，<b>永不覆盖已填写的值</b>。</span>
+    </div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px">新增定义 1</div>
+    <div class="diff-row"><span class="checkbox on"><svg class="i" style="width:11px"><use href="#i-check"/></svg></span><span class="mono">DB_CONN_TIMEOUT</span><span class="tag tag-plain" style="margin-left:auto">明文</span></div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--text-2);margin:14px 0 8px">定义变更 2</div>
+    <div class="diff-row"><span class="checkbox on"><svg class="i" style="width:11px"><use href="#i-check"/></svg></span><span class="mono">DB_POOL_MAX</span><span class="muted" style="margin-left:auto;font-size:11.5px">备注变更</span></div>
+    <div class="diff-row"><span class="checkbox"><svg class="i" style="width:11px"><use href="#i-check"/></svg></span><span class="mono">DB_SSL</span><span class="muted" style="margin-left:auto;font-size:11.5px">改为必填</span></div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--text-2);margin:14px 0 8px">模板已删除 1</div>
+    <div class="diff-row"><span class="mono">DB_LEGACY_URL</span>
+      <span style="margin-left:auto;display:flex;gap:6px"><span class="tag tag-plain" style="cursor:pointer;border:1px solid var(--primary);color:var(--primary-600)">保留为自有</span><span class="tag tag-plain" style="cursor:pointer">删除</span></span>
+    </div>
+  </div>
+  <div class="drawer-f">
+    <button class="btn" onclick="toggleDrawer(false)">取消</button>
+    <button class="btn btn-primary" onclick="toggleDrawer(false)">应用同步（2 项）</button>
+  </div>
+</aside>
+
+<script>
+const VARS = {"DB_HOST": {"global": "10.0.1.5","dev": null,"test": "10.0.3.8","staging": null,"prod": "10.0.2.9"},"DB_PORT": {"global": "5432","dev": null,"test": null,"staging": null,"prod": null},"DB_NAME": {"global": "payment","dev": null,"test": "payment_test","staging": "payment_stg","prod": null},"DB_PASSWORD": {"global": "••••••","dev": null,"test": "••••••","staging": null,"prod": ""},"DB_POOL_MAX": {"global": "20","dev": null,"test": null,"staging": "50","prod": null},"DB_SSL": {"global": "","dev": "","test": "","staging": "","prod": ""},"DB_STATEMENT_TIMEOUT_MS": {"global": "3000","dev": null,"test": null,"staging": null,"prod": null},"REDIS_HOST": {"global": "10.0.1.9","dev": "127.0.0.1","test": null,"staging": "10.0.3.20","prod": "10.0.2.20"},"REDIS_PORT": {"global": "6379","dev": null,"test": null,"staging": null,"prod": null},"REDIS_PASSWORD": {"global": "••••••","dev": null,"test": "••••••","staging": null,"prod": "••••••"},"APP_LOG_LEVEL": {"global": "info","dev": null,"test": null,"staging": "debug","prod": null},"APP_TZ": {"global": "Asia/Shanghai","dev": null,"test": null,"staging": null,"prod": null}};
+const screens = document.querySelectorAll('.screen');
+const navs = document.querySelectorAll('.nav-item');
+const crumb = document.getElementById('crumb-now');
+const view = document.querySelector('.view');
+
+function showScreen(key){
+  screens.forEach(s => s.classList.toggle('active', s.id === 's-' + key));
+  navs.forEach(n => n.classList.toggle('active', n.dataset.screen === key));
+  const n = document.querySelector('.nav-item[data-screen="' + key + '"]');
+  crumb.textContent = n ? n.querySelector('span').textContent : '';
+  view.scrollTop = 0;
+}
+
+navs.forEach(n => n.addEventListener('click', () => {
+  showScreen(n.dataset.screen);
+  clearDeepLink();
+  history.replaceState(null, '', '#' + n.dataset.screen);
+}));
+
+/* ---------- ① 筛选：搜索 + 前缀 ---------- */
+const mxRows = Array.from(document.querySelectorAll('#mx-body tr[data-key]'));
+const mxEmpty = document.getElementById('mx-empty');
+const mxCount = document.getElementById('mx-count');
+const mxQ = document.getElementById('mx-q');
+const pfBtns = Array.from(document.querySelectorAll('.pf'));
+let pf = 'all', kw = '';
+
+function rowMatch(r, p, k){
+  if(p !== 'all'){
+    if(p === '__empty'){ if(!r.querySelector('.is-empty')) return false; }
+    else if(p === '__ov'){ if(!r.querySelector('.is-val.ov, .is-secret.ov')) return false; }
+    else if(!r.dataset.key.startsWith(p)) return false;
+  }
+  if(k){
+    const hay = (r.dataset.key + ' ' + (r.dataset.search || '')).toLowerCase();
+    if(!hay.includes(k)) return false;
+  }
+  return true;
+}
+
+function applyFilter(){
+  let shown = 0;
+  mxRows.forEach(r => {
+    const ok = rowMatch(r, pf, kw);
+    r.classList.toggle('is-hidden', !ok);
+    if(ok) shown++;
+  });
+  mxEmpty.style.display = shown ? 'none' : '';
+  mxCount.innerHTML = '显示 <b>' + shown + '</b> / ' + mxRows.length;
+}
+
+function resetFilter(){
+  pf = 'all'; kw = ''; mxQ.value = '';
+  pfBtns.forEach(b => b.classList.toggle('on', b.dataset.pf === 'all'));
+  applyFilter();
+}
+
+pfBtns.forEach(b => {
+  const p = b.dataset.pf;
+  const c = b.querySelector('[data-c]');
+  if(c) c.textContent = mxRows.filter(r => rowMatch(r, p, '')).length;
+  b.addEventListener('click', () => {
+    pf = (pf === p && p !== 'all') ? 'all' : p;
+    pfBtns.forEach(x => x.classList.toggle('on', x.dataset.pf === pf));
+    applyFilter();
+  });
+});
+
+mxQ.addEventListener('input', () => { kw = mxQ.value.trim().toLowerCase(); applyFilter(); });
+document.addEventListener('keydown', e => {
+  const onModule = document.getElementById('s-module').classList.contains('active');
+  if(e.key === '/' && onModule && !/input|textarea/i.test(document.activeElement.tagName)){
+    e.preventDefault(); mxQ.focus();
+  }
+});
+applyFilter();
+
+/* ---------- ② 继承链 popover ---------- */
+const ENV_ORDER = ['dev', 'test', 'staging', 'prod'];
+const ENV_COLOR = {dev:'var(--env-dev)', test:'var(--env-test)', staging:'var(--env-staging)', prod:'var(--env-prod)', global:'#98a1b0'};
+let pop = null;
+
+function closeChain(){ if(pop){ pop.remove(); pop = null; } }
+
+// 解析顺序：本环境 → 更通用环境（dev 最通用）→ 全局值
+function chainLayers(env){
+  const upto = ENV_ORDER.indexOf(env);
+  const stack = ENV_ORDER.slice(0, upto < 0 ? 0 : upto + 1).reverse();
+  return stack.concat(['global']);
+}
+
+function resolveVal(key, env){
+  const m = VARS[key] || {};
+  for(const l of chainLayers(env)){
+    const v = m[l];
+    if(v === undefined || v === null) continue;
+    return {hit: l, value: v};
+  }
+  return {hit: null, value: ''};
+}
+
+function openChain(cell){
+  closeChain();
+  const key = cell.dataset.key, env = cell.dataset.env;
+  const m = VARS[key] || {};
+  const res = resolveVal(key, env);
+  const rows = chainLayers(env).map(l => {
+    const raw = m[l];
+    const und = (raw === undefined || raw === null);
+    const hit = (l === res.hit);
+    const label = l === 'global' ? '全局值' : l;
+    const val = und ? '未定义' : (raw === '' ? '已清空（阻断继承）' : raw);
+    return '<div class="chain-row' + (und ? ' und' : '') + (hit ? ' hit' : '') + (l === env ? ' self' : '') + '">' +
+      '<span class="dot" style="--c:' + ENV_COLOR[l] + '"></span>' +
+      '<span class="nm">' + label + '</span>' +
+      (l === env ? '<span class="lv lv-plain">当前格</span>' : '') +
+      (hit ? '<span class="lv">命中</span>' : '') +
+      '<span class="v">' + val.replace(/</g, '&lt;') + '</span>' +
+    '</div>';
+  }).join('');
+
+  pop = document.createElement('div');
+  pop.className = 'chain-pop';
+  pop.innerHTML =
+    '<div class="chain-pop-h"><span class="k">' + key + '</span>' +
+    '<span class="tag tag-plain">' + env + '</span>' +
+    '<span style="margin-left:auto;font-size:11px;color:var(--text-3)">继承链</span></div>' +
+    '<div class="chain-pop-b">' + rows + '</div>' +
+    '<div class="chain-pop-f"><span class="tip">更具体环境优先</span>' +
+    '<button class="btn btn-sm">在 ' + env + ' 覆盖</button></div>';
+  document.body.appendChild(pop);
+
+  const r = cell.getBoundingClientRect();
+  const pw = pop.offsetWidth, ph = pop.offsetHeight;
+  const left = Math.max(12, Math.min(r.left, innerWidth - pw - 12));
+  let top = r.bottom + 6;
+  if(top + ph > innerHeight - 12) top = Math.max(12, r.top - ph - 6);
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+
+  pop.querySelector('.btn').addEventListener('click', () => {
+    closeChain();
+    showToast('在 ' + env + ' 层写入覆盖值 · ' + key);
+  });
+}
+
+document.addEventListener('click', e => {
+  if(e.target.isConnected === false) return;   // 节点已被重渲染替换
+  const inh = e.target.closest && e.target.closest('.cell.is-inherit');
+  if(inh){ openChain(inh); return; }
+  const add = e.target.closest && e.target.closest('[data-add]');
+  if(add){ openPicker(add); return; }
+  if(pop && !e.target.closest('.chain-pop')) closeChain();
+  if(picker && !e.target.closest('.picker')) closePicker();
+});
+document.addEventListener('scroll', () => { closeChain(); closePicker(); }, true);
+
+/* ---------- ④ 深链 ---------- */
+function showToast(msg){
+  let t = document.getElementById('toast');
+  if(!t){ t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => t.classList.remove('on'), 3000);
+}
+
+function copyDeepLink(){
+  const path = '/modules/123?env=prod&var=DB_HOST';
+  const full = /^https?:/.test(location.protocol) ? location.origin + path : path;
+  const done = () => showToast('已复制深链 · ' + full);
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(full).then(done, done);
+  } else { done(); }
+}
+
+function applyDeepLink(key, env){
+  const row = document.querySelector('#mx-body tr[data-key="' + key + '"]');
+  if(!row) return false;
+  resetFilter();
+  clearDeepLink();
+  row.classList.add('is-hit');
+  const cell = row.querySelector('.cell[data-env="' + env + '"]') || row.querySelector('.cell');
+  if(cell) cell.classList.add('is-hit');
+  document.getElementById('dl-k').textContent = key;
+  document.getElementById('dl-e').textContent = env ? ' · ' + env : '';
+  document.getElementById('dl-bar').style.display = '';
+  setTimeout(() => row.scrollIntoView({block: 'center', behavior: 'smooth'}), 60);
+  showToast('已从链接定位：' + key + (env ? ' · ' + env : ''));
+  return true;
+}
+
+function clearDeepLink(){
+  document.querySelectorAll('.is-hit').forEach(el => el.classList.remove('is-hit'));
+  const bar = document.getElementById('dl-bar');
+  if(bar) bar.style.display = 'none';
+}
+
+// 直达：#module 或 #module?var=DB_HOST&env=prod
+(function boot(){
+  const raw = decodeURIComponent(location.hash.replace(/^#/, ''));
+  if(!raw) return;
+  const parts = raw.split('?');
+  const name = parts[0];
+  const p = new URLSearchParams(parts[1] || '');
+  if(document.getElementById('s-' + name)) showScreen(name);
+  const key = p.get('var');
+  if(key) setTimeout(() => applyDeepLink(key, p.get('env') || 'prod'), 80);
+})();
+
+/* ---------- 应用看板：订阅选择器 + 健康度 ---------- */
+const APPS = [
+  {code:'payment-service', name:'支付服务'},
+  {code:'order-service',   name:'订单服务'},
+  {code:'user-center',     name:'用户中心'},
+  {code:'api-gateway',     name:'网关'}
+];
+const MODS = {
+  'common-notify': {desc:'通知渠道统一配置', health:'red', subs:['payment-service', 'order-service', 'user-center']},
+  'redis-config':  {desc:'Redis 连接参数',   health:'ok',  subs:['order-service', 'user-center']},
+  'log-sink':      {desc:'日志采集端',       health:'ok',  subs:[]}
+};
+const appName = code => (APPS.find(a => a.code === code) || {}).name || code;
+const subsOf = app => Object.keys(MODS).filter(n => MODS[n].subs.includes(app));
+
+function chipsHTML(app){
+  return subsOf(app).map(n => '<span class="chip chip-sub" data-health="' + MODS[n].health +
+      '"><span class="dot"></span>' + n + '</span>').join('') +
+    '<button class="chip chip-add" data-add="' + app + '">+ 订阅</button>';
+}
+
+function renderBoard(){
+  document.querySelectorAll('[data-subs]').forEach(box => {
+    const app = box.dataset.subs;
+    box.innerHTML = chipsHTML(app);
+    const cnt = document.querySelector('[data-sub-count="' + app + '"]');
+    if(cnt) cnt.textContent = subsOf(app).length;
+
+    const card = document.querySelector('.appcard[data-app="' + app + '"]');
+    const risk = card && card.querySelector('[data-risk]');
+    if(risk){
+      const reds = card.querySelectorAll('.chip[data-health="red"]').length;
+      const ambers = card.querySelectorAll('.chip[data-health="amber"]').length;
+      if(reds){
+        risk.className = 'risk on red'; risk.textContent = reds + ' 处问题';
+        risk.title = reds + ' 个模块缺必填变量';
+      } else if(ambers){
+        risk.className = 'risk on amber'; risk.textContent = ambers + ' 待同步';
+        risk.title = ambers + ' 个模块的模板有更新未同步';
+      } else {
+        risk.className = 'risk'; risk.textContent = ''; risk.title = '';
+      }
+    }
+  });
+  Object.keys(MODS).forEach(n => {
+    const el = document.querySelector('[data-mod-subs="' + n + '"]');
+    if(el) el.textContent = MODS[n].subs.length;
+  });
+}
+
+let picker = null, pickerApp = null, pickerKw = '';
+function closePicker(){ if(picker){ picker.remove(); picker = null; pickerApp = null; } }
+
+function pickerBody(){
+  const kw = pickerKw.trim().toLowerCase();
+  const rows = Object.keys(MODS).filter(n => !kw || n.includes(kw) || MODS[n].desc.toLowerCase().includes(kw));
+  if(!rows.length) return '<div class="pk-empty">没有匹配的共享模块</div>';
+  return rows.map(n => {
+    const m = MODS[n], on = m.subs.includes(pickerApp);
+    return '<button class="pk-row" data-mod="' + n + '">' +
+      '<span class="checkbox' + (on ? ' on' : '') + '">' +
+        (on ? '<svg class="i" style="width:11px"><use href="#i-check"/></svg>' : '') + '</span>' +
+      '<div class="pk-main">' +
+        '<div class="pk-t">' + n + (on ? '<span class="tag tag-plain" style="font-weight:500">已订阅</span>' : '') + '</div>' +
+        '<div class="pk-s">' + m.desc + ' · ' + m.subs.length + ' 个应用订阅</div>' +
+      '</div></button>';
+  }).join('');
+}
+
+function placePop(el, anchor){
+  const r = anchor.getBoundingClientRect();
+  const w = el.offsetWidth, h = el.offsetHeight;
+  el.style.left = Math.max(12, Math.min(r.left, innerWidth - w - 12)) + 'px';
+  let top = r.bottom + 6;
+  if(top + h > innerHeight - 12) top = Math.max(12, r.top - h - 6);
+  el.style.top = top + 'px';
+}
+
+function openPicker(anchor){
+  closeChain(); closePicker();
+  pickerApp = anchor.dataset.add; pickerKw = '';
+  picker = document.createElement('div');
+  picker.className = 'picker';
+  picker.innerHTML =
+    '<div class="picker-h">订阅共享模块<span class="mono">' + appName(pickerApp) + '</span></div>' +
+    '<div class="picker-s"><input id="pk-q" placeholder="搜共享模块" autocomplete="off"></div>' +
+    '<div class="picker-b" id="pk-b">' + pickerBody() + '</div>' +
+    '<div class="picker-f">勾选即生效 <b>·</b> 可随时取消</div>';
+  document.body.appendChild(picker);
+  placePop(picker, anchor);
+  const q = picker.querySelector('#pk-q');
+  q.addEventListener('input', () => {
+    pickerKw = q.value;
+    picker.querySelector('#pk-b').innerHTML = pickerBody();
+  });
+  picker.addEventListener('click', e => {
+    e.stopPropagation();                       // 重渲染会让 e.target 脱离文档，别让外层判定为"点在外面"
+    const row = e.target.closest('.pk-row');
+    if(row) toggleSub(row.dataset.mod, pickerApp);
+  });
+  setTimeout(() => q.focus(), 30);
+}
+
+function toggleSub(mod, app){
+  const arr = MODS[mod].subs, i = arr.indexOf(app);
+  if(i >= 0) arr.splice(i, 1); else arr.push(app);
+  renderBoard();
+  if(picker && pickerApp === app){
+    picker.querySelector('#pk-b').innerHTML = pickerBody();
+    const q = picker.querySelector('#pk-q');
+    if(q && pickerKw) q.value = pickerKw;
+  }
+  if(dwMod) renderShared(dwMod);
+  if(picker){                                   // chip 被重渲染，锚点要重找
+    const anchor = document.querySelector('[data-add="' + pickerApp + '"]');
+    if(anchor) placePop(picker, anchor);
+  }
+  showToast((i >= 0 ? '已取消订阅 ' : '已订阅 ') + mod + ' · ' + appName(app));
+}
+
+/* 反向入口：共享模块 → 订阅应用 */
+let dwMod = null;
+function renderShared(mod){
+  dwMod = mod;
+  const m = MODS[mod];
+  document.getElementById('dw2-t').textContent = mod;
+  document.getElementById('dw2-desc').textContent = m.desc;
+  document.getElementById('dw2-count').textContent = m.subs.length + ' / ' + APPS.length + ' 个应用';
+  document.getElementById('dw2-list').innerHTML = APPS.map(a => {
+    const on = m.subs.includes(a.code);
+    return '<button class="dw-row" data-app="' + a.code + '">' +
+      '<span class="checkbox' + (on ? ' on' : '') + '">' +
+        (on ? '<svg class="i" style="width:11px"><use href="#i-check"/></svg>' : '') + '</span>' +
+      '<div class="pk-main"><div class="pk-t">' + a.name + '</div>' +
+        '<div class="pk-s">' + a.code + '</div></div>' +
+      (on ? '<span class="tag tag-plain">已订阅</span>' : '') +
+    '</button>';
+  }).join('');
+}
+document.querySelectorAll('.rail-item').forEach(it => {
+  it.addEventListener('click', () => { renderShared(it.dataset.mod); toggleDrawer2(true); });
+});
+document.getElementById('dw2').addEventListener('click', e => {
+  const row = e.target.closest('.dw-row');
+  if(row && dwMod) toggleSub(dwMod, row.dataset.app);
+});
+renderBoard();
+
+/* ---------- 抽屉 ---------- */
+// 演示：点击模板同步条打开抽屉
+document.querySelector('.tplbar .btn').addEventListener('click', () => toggleDrawer(true));
+
+function syncOverlay(){
+  const open = document.getElementById('dw').classList.contains('on') ||
+               document.getElementById('dw2').classList.contains('on');
+  document.getElementById('ov').classList.toggle('on', open);
+}
+function toggleDrawer(on){
+  document.getElementById('dw').classList.toggle('on', on);
+  if(on) document.getElementById('dw2').classList.remove('on');
+  syncOverlay();
+}
+function toggleDrawer2(on){
+  document.getElementById('dw2').classList.toggle('on', on);
+  if(on) document.getElementById('dw').classList.remove('on');
+  syncOverlay();
+}
+document.getElementById('ov').addEventListener('click', () => { toggleDrawer(false); toggleDrawer2(false); });
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape'){ toggleDrawer(false); toggleDrawer2(false); closeChain(); closePicker(); }
+});
+
+// 演示：点击矩阵单元格切换编辑态（仅视觉；保留环境覆盖标记与 data-*）
+function bindEdit(btn){
+  btn.addEventListener('click', () => {
+    const cls = btn.className.replace(/\s*is-hit/g, '');
+    const data = Object.assign({}, btn.dataset);
+    const orig = btn.querySelector('.txt').textContent;
+    const input = document.createElement('input');
+    input.className = 'cell-input';
+    input.value = orig;
+    btn.replaceWith(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const commit = () => {
+      if(done) return; done = true;
+      const b = document.createElement('button');
+      b.className = cls;
+      Object.assign(b.dataset, data);
+      const span = document.createElement('span');
+      span.className = 'txt';
+      span.textContent = input.value;
+      b.appendChild(span);
+      input.replaceWith(b);
+      bindEdit(b);
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', e => {
+      if(e.key === 'Enter') input.blur();
+      if(e.key === 'Escape'){ e.stopPropagation(); input.value = orig; input.blur(); }
+    });
+  });
+}
+document.querySelectorAll('.cell.is-val').forEach(bindEdit);
+
+// 演示：checkbox 切换
+document.querySelectorAll('.checkbox').forEach(c => {
+  c.addEventListener('click', e => { e.stopPropagation(); c.classList.toggle('on'); });
+});
+</script>
+</body>
+</html>
