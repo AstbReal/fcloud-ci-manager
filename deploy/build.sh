@@ -11,18 +11,27 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 TAG="${1:-fcloud-ci-hub:latest}"
-NODE_BIN='C:/Users/zzesu/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin'
-PNPM='C:/Users/zzesu/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin/pnpm.mjs'
 
-echo "==> [1/4] 构建前端"
-if [ -x "${NODE_BIN}/node" ] || [ -x "${NODE_BIN}/node.exe" ]; then
-  NODE="${NODE_BIN}/node"
-  [ -x "${NODE_BIN}/node.exe" ] && NODE="${NODE_BIN}/node.exe"
-  "$NODE" "$PNPM" --dir frontend install --prefer-offline
-  "$NODE" "$PNPM" --dir frontend run build
-else
-  (cd frontend && npm install && npm run build)
-fi
+# pnpm 版本由 frontend/package.json 的 packageManager 字段锁定，corepack 按它取版本；
+# 不依赖全局安装，也不会退回 npm 绕开 pnpm-lock。
+pnpm_run() {
+  if command -v pnpm >/dev/null 2>&1; then
+    pnpm "$@"
+  elif command -v corepack >/dev/null 2>&1; then
+    # --pm-on-fail=ignore：没执行过 corepack enable 时，pnpm 会因 packageManager
+    # 版本校验拒绝运行；这里显式放行（corepack 仍会按 packageManager 取对应版本）
+    corepack pnpm --pm-on-fail=ignore "$@"
+  else
+    echo "!! 未找到 pnpm / corepack：需要 Node 18+，并执行 corepack enable pnpm" >&2
+    exit 1
+  fi
+}
+
+echo "==> [1/4] 构建前端（pnpm）"
+# 非交互环境下 pnpm 清理 node_modules 会要求 TTY 确认，CI=true 让它直接执行
+export CI=true
+pnpm_run --dir frontend install --frozen-lockfile --config.confirmModulesPurge=false
+pnpm_run --dir frontend run build
 
 echo "==> [2/4] 收集前端产物到 deploy/frontend-dist"
 rm -rf deploy/frontend-dist

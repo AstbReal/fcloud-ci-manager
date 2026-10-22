@@ -86,8 +86,12 @@ cd backend && ./gradlew bootRun
 ### 3.3 启动前端
 
 ```bash
-cd frontend && npm run dev
+cd frontend && pnpm install && pnpm run dev
 ```
+
+包管理器固定为 pnpm（`frontend/package.json` 的 `packageManager` 字段锁版本，
+`pnpm-lock.yaml` 是唯一依赖事实源）。没装 pnpm 时先 `corepack enable pnpm`，
+或用 `corepack pnpm --pm-on-fail=ignore`。Node 需要 18+（Vite 5 要求），推荐 20/22 LTS。
 
 Vite 代理 `/api`、`/oauth2`、`/oauth` → `http://localhost:8080`。
 
