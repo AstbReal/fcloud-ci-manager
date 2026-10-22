@@ -33,13 +33,14 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * §2.4 上传超过容器级上限（64MB）时，给出明确业务提示而非 500。
+     * 上传超过容器级上限（默认 2GB，见 server.servlet.multipart）时给出业务提示而非 500。
+     * 单文件 50MB 的限制在 FileService 里单独校验，走的是普通 BizException。
      */
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiResponse<Void>> handleUploadTooLarge(
             org.springframework.web.multipart.MaxUploadSizeExceededException e) {
         return ResponseEntity.status(200)
-                .body(ApiResponse.error(40000, "文件超过 50MB 限制"));
+                .body(ApiResponse.error(40000, "上传内容超过服务端上限（默认 2GB）"));
     }
 
     @ExceptionHandler(Exception.class)

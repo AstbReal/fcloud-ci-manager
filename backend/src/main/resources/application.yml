@@ -79,13 +79,13 @@ spring:
     time-zone: Asia/Shanghai
     default-property-inclusion: non_null
 
-  # §2.4 单文件 ≤50MB：Spring 默认 10MB 会先拦截并返回 500，
-  # 这里放宽到 64MB，让业务层给出明确的 "超过 50MB 限制" 提示（HTTP 400）。
+  # 容器层上限放宽到 2GB：备份包要整包上传恢复（可能几百 MB），
+  # 单文件 50MB 的限制由 FileService 按 fcloud.storage.max-file-size-mb 校验，
+  # 不依赖 Spring 的多部分上限。
   servlet:
     multipart:
-      # 与 fcloud.storage.max-file-size-mb 对齐，超出时由 GlobalExceptionHandler 转成业务提示
-      max-file-size: ${FCLOUD_MAX_FILE_SIZE_MB:50}MB
-      max-request-size: ${FCLOUD_MAX_FILE_SIZE_MB:50}MB
+      max-file-size: ${FCLOUD_MAX_UPLOAD_MB:2048}MB
+      max-request-size: ${FCLOUD_MAX_UPLOAD_MB:2048}MB
 
   mvc:
     pathmatch:

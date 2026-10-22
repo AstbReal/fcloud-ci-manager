@@ -18,11 +18,11 @@ public class ScheduledBackupJob {
     @Scheduled(cron = "0 0 2 * * *")
     public void dailyBackup() {
         try {
-            BackupRecord r = backupService.create("SCHEDULED", null);
-            log.info("scheduled backup created: {} ({} bytes)",
-                    r.getFileName(), r.getSize());
+            // 异步：打包在 backupExecutor 里跑，调度线程立刻释放
+            BackupRecord r = backupService.createAsync("SCHEDULED", null);
+            log.info("scheduled backup queued: {}", r.getFileName());
         } catch (Exception e) {
-            log.error("scheduled backup failed: {}", e.getMessage());
+            log.error("scheduled backup failed to start: {}", e.getMessage());
         }
     }
 }

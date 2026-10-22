@@ -10,7 +10,8 @@ import java.time.Instant;
 
 /**
  * §3.17 备份记录
- * 列：id, file_name, file_path, size, type, created_by, created_at
+ * 列：id, file_name, file_path, size, type, created_by, created_at,
+ *     status, error_message, finished_at
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -35,6 +36,17 @@ public class BackupRecord extends BaseEntity {
 
     @TableField("created_at")
     private Instant createdAt;
+
+    /** RUNNING | SUCCESS | FAILED */
+    @TableField("status")
+    private String status;
+
+    /** 仅 FAILED 时有值 */
+    @TableField("error_message")
+    private String errorMessage;
+
+    @TableField("finished_at")
+    private Instant finishedAt;
 
     @Override
     public Instant getCreatedAt() {

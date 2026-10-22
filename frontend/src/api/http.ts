@@ -76,10 +76,11 @@ export const api = {
     const r = await http.get(url, { params, responseType: 'blob' })
     return r.data as Blob
   },
-  /** 上传 multipart */
-  upload: async <T>(url: string, form: FormData) => {
+  /** 上传 multipart；timeout 可按接口覆盖（备份恢复可能跑很久） */
+  upload: async <T>(url: string, form: FormData, timeout = 60000) => {
     const r = await http.post(url, form, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout
     })
     return r.data.data as T
   }

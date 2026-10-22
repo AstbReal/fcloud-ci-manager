@@ -75,6 +75,17 @@ public class PatService extends ServiceImpl<PatMapper, Pat> {
     }
 
     /**
+     * 清空全部 PAT 缓存。恢复备份后调用：包里的令牌与当前库可能完全不同，
+     * 不清会让旧 token 在 TTL 内继续解析出主体。
+     */
+    public void clearCache() {
+        var keys = redis.keys(CACHE_PREFIX + "*");
+        if (keys != null && !keys.isEmpty()) {
+            redis.delete(keys);
+        }
+    }
+
+    /**
      * 当前用户自己的令牌（管理员也只看自己的，避免越权猜测他人凭证）。
      */
     public List<Pat> listMine() {

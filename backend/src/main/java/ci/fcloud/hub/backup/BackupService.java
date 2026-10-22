@@ -11,6 +11,11 @@ import ci.fcloud.hub.file.FileVersionMapper;
 import ci.fcloud.hub.file.ModuleFile;
 import ci.fcloud.hub.file.ModuleFileMapper;
 import ci.fcloud.hub.module.*;
+import ci.fcloud.hub.pat.Pat;
+import ci.fcloud.hub.pat.PatMapper;
+import ci.fcloud.hub.pat.PatService;
+import ci.fcloud.hub.setting.SystemSetting;
+import ci.fcloud.hub.setting.SystemSettingMapper;
 import ci.fcloud.hub.template.Template;
 import ci.fcloud.hub.template.TemplateMapper;
 import ci.fcloud.hub.template.TemplateVar;
@@ -28,9 +33,12 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import javax.annotation.PostConstruct;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -46,6 +54,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -98,16 +107,63 @@ public class BackupService {
     private final TemplateVarMapper templateVarMapper;
     private final ApiTokenMapper tokenMapper;
     private final ApiTokenService tokenService;
+    private final PatMapper patMapper;
+    private final PatService patService;
+    private final SystemSettingMapper settingMapper;
+    private final RestoreJobMapper restoreJobMapper;
+
+    /** 恢复要在后台线程里开事务：显式用 TransactionTemplate，避免 self-invocation 绕过代理 */
+    private final org.springframework.transaction.support.TransactionTemplate txTemplate;
+
+    /** 备份打包是 IO 密集型长任务，单独一个单线程执行器，避免占满公共线程池 */
+    private final @Qualifier("backupExecutor") TaskExecutor backupExecutor;
+
+    /**
+     * 进程重启后，上一轮还在 RUNNING 的记录不可能再完成，标记为失败。
+     * 否则前端会一直轮询，且并发保护会永远挡住新的备份。
+     */
+    @PostConstruct
+    public void failStaleRunning() {
+        int n = jdbcTemplate.update(
+                "UPDATE fch_backup_record SET status = 'FAILED', "
+                        + "error_message = '进程重启，备份任务中断', finished_at = now() "
+                        + "WHERE status = 'RUNNING'");
+        if (n > 0) {
+            log.warn("marked {} stale RUNNING backup record(s) as FAILED", n);
+        }
+        // 恢复任务同理：进程重启后不可能再继续，顺带清掉它留下的临时包
+        List<RestoreJob> staleJobs = restoreJobMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RestoreJob>()
+                        .eq(RestoreJob::getStatus, "RUNNING"));
+        for (RestoreJob job : staleJobs) {
+            job.setStatus("FAILED");
+            job.setErrorMessage("进程重启，恢复任务中断");
+            job.setFinishedAt(Instant.now());
+            restoreJobMapper.updateById(job);
+            try {
+                Files.deleteIfExists(Paths.get(job.getFilePath()));
+            } catch (IOException ignored) {
+                // 临时文件删不掉不影响状态
+            }
+        }
+        if (!staleJobs.isEmpty()) {
+            log.warn("marked {} stale RUNNING restore job(s) as FAILED", staleJobs.size());
+        }
+    }
 
     // ==================================================================
     // 备份
     // ==================================================================
 
     /**
-     * 创建备份包，返回记录。
+     * 创建备份任务：只落一条 RUNNING 记录并立刻返回，真正的打包放到后台线程。
+     *
+     * <p>不加事务注解：记录必须马上提交，前端才能看到 RUNNING，
+     * 后台线程也才能按 id 查到这个记录。</p>
      */
-    @Transactional
-    public BackupRecord create(String type, Long createdBy) {
+    public BackupRecord createAsync(String type, Long createdBy) {
+        assertIdle();
+
         Path dir = Paths.get(props.getBackup().getDir());
         try {
             Files.createDirectories(dir);
@@ -119,8 +175,64 @@ public class BackupService {
                 .format(TS) + ".tar.gz";
         Path out = dir.resolve(fileName);
 
-        Manifest m = buildManifest();
+        BackupRecord rec = new BackupRecord();
+        rec.setFileName(fileName);
+        rec.setFilePath(out.toString());
+        rec.setSize(0L);
+        rec.setType(type == null ? "MANUAL" : type);
+        rec.setCreatedBy(createdBy);
+        rec.setCreatedAt(Instant.now());
+        rec.setStatus("RUNNING");
+        backupMapper.insert(rec);
 
+        Long id = rec.getId();
+        backupExecutor.execute(() -> runBackup(id));
+        return rec;
+    }
+
+    /**
+     * 后台打包：成功置 SUCCESS 并清理旧份；失败保留记录、写原因、删半成品。
+     */
+    private void runBackup(Long recordId) {
+        BackupRecord rec = backupMapper.selectById(recordId);
+        if (rec == null) {
+            log.warn("backup record {} disappeared before packaging", recordId);
+            return;
+        }
+        Path out = Paths.get(rec.getFilePath());
+        long started = System.currentTimeMillis();
+        try {
+            writeArchive(out);
+            rec.setSize(Files.size(out));
+            rec.setStatus("SUCCESS");
+            rec.setFinishedAt(Instant.now());
+            backupMapper.updateById(rec);
+            pruneOld();
+            log.info("backup {} finished in {} ms ({} bytes)",
+                    rec.getFileName(), System.currentTimeMillis() - started, rec.getSize());
+        } catch (Exception e) {
+            log.error("backup {} failed", rec.getFileName(), e);
+            try {
+                Files.deleteIfExists(out);
+            } catch (IOException ignored) {
+                // 半成品删不掉也不影响记录状态
+            }
+            rec.setSize(0L);
+            rec.setStatus("FAILED");
+            rec.setErrorMessage(truncate(e.getMessage() == null
+                    ? e.getClass().getSimpleName() : e.getMessage(), 900));
+            rec.setFinishedAt(Instant.now());
+            backupMapper.updateById(rec);
+        }
+    }
+
+    private static String truncate(String s, int max) {
+        return s.length() <= max ? s : s.substring(0, max);
+    }
+
+    /** 打 tar.gz：manifest.json + files/ 下全部文件版本二进制 */
+    private void writeArchive(Path out) throws IOException {
+        Manifest m = buildManifest();
         try (OutputStream os = Files.newOutputStream(out);
              GzipCompressorOutputStream gz = new GzipCompressorOutputStream(os);
              TarArchiveOutputStream tar = new TarArchiveOutputStream(gz)) {
@@ -154,25 +266,7 @@ public class BackupService {
                 tar.closeArchiveEntry();
             }
             tar.finish();
-        } catch (IOException e) {
-            throw new BizException(50000, "备份失败: " + e.getClass().getSimpleName());
         }
-
-        BackupRecord rec = new BackupRecord();
-        rec.setFileName(fileName);
-        rec.setFilePath(out.toString());
-        try {
-            rec.setSize(Files.size(out));
-        } catch (IOException e) {
-            rec.setSize(0L);
-        }
-        rec.setType(type == null ? "MANUAL" : type);
-        rec.setCreatedBy(createdBy);
-        rec.setCreatedAt(Instant.now());
-        backupMapper.insert(rec);
-
-        pruneOld();
-        return rec;
     }
 
     private void addBytes(TarArchiveOutputStream tar, String name, byte[] data)
@@ -186,7 +280,8 @@ public class BackupService {
 
     private Manifest buildManifest() {
         Manifest m = new Manifest();
-        m.version = 1;
+        // v2：新增 pats / settings，并补上应用的 GitLab 绑定字段
+        m.version = 2;
         m.backupAt = Instant.now();
 
         // 用户：不含任何密码字段（设计上本就没有）
@@ -226,6 +321,9 @@ public class BackupService {
             o.put("name", a.getName());
             o.put("description", a.getDescription());
             o.put("sortOrder", a.getSortOrder());
+            // V4 新增：GitLab 仓库绑定，漏了会在恢复后丢关联
+            o.put("gitlabProjectId", a.getGitlabProjectId());
+            o.put("repoUrl", a.getRepoUrl());
             o.put("createdBy", a.getCreatedBy());
             o.put("createdAt", a.getCreatedAt());
             o.put("updatedAt", a.getUpdatedAt());
@@ -375,16 +473,45 @@ public class BackupService {
             m.tokens.add(o);
         }
 
+        // 个人访问令牌（MCP）：同样只存 hash
+        for (Pat p : patMapper.selectList(null)) {
+            Map<String, Object> o = new LinkedHashMap<>();
+            o.put("id", p.getId());
+            o.put("userId", p.getUserId());
+            o.put("name", p.getName());
+            o.put("tokenHash", p.getTokenHash());
+            o.put("tokenPrefix", p.getTokenPrefix());
+            o.put("scopes", p.getScopes());
+            o.put("expiresAt", p.getExpiresAt());
+            o.put("revoked", p.getRevoked());
+            o.put("createdAt", p.getCreatedAt());
+            o.put("lastUsedAt", p.getLastUsedAt());
+            m.pats.add(o);
+        }
+
+        // 系统设置：GitLab 接入、MCP 开关等；加密项导出的也是密文
+        for (SystemSetting st : settingMapper.selectList(null)) {
+            Map<String, Object> o = new LinkedHashMap<>();
+            o.put("settingKey", st.getSettingKey());
+            o.put("settingValue", st.getSettingValue());
+            o.put("encrypted", st.getEncrypted());
+            o.put("updatedBy", st.getUpdatedBy());
+            o.put("updatedAt", st.getUpdatedAt());
+            m.settings.add(o);
+        }
+
         return m;
     }
 
     /**
      * §9.2 保留最近 N 份（超出删除文件 + 记录）。
+     * 只统计已结束的任务：RUNNING 的那条不能删，否则后台线程更新不到它。
      */
     public void pruneOld() {
         int retain = props.getBackup().getRetain();
         List<BackupRecord> all = backupMapper.selectList(
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<BackupRecord>()
+                        .ne(BackupRecord::getStatus, "RUNNING")
                         .orderByDesc(BackupRecord::getCreatedAt));
         for (int i = retain; i < all.size(); i++) {
             BackupRecord old = all.get(i);
@@ -412,28 +539,123 @@ public class BackupService {
     }
 
     // ==================================================================
-    // 恢复
+    // 恢复（异步）
     // ==================================================================
 
     /**
-     * §9.2 恢复。
+     * 提交恢复任务：上传包落到临时文件 → 插一条 RUNNING 记录 → 后台执行。
      *
-     * @param strategy ABORT（默认）/ MERGE / OVERWRITE
+     * <p>上传本身仍占用请求线程（要收完整个包），解包导入在后台线程完成。</p>
      */
-    @Transactional
-    public RestoreResult restore(MultipartFile file, String strategy) {
+    public RestoreJob submitRestore(MultipartFile file, String strategy, Long createdBy) {
+        String s = normalizeStrategy(strategy);
+        assertIdle();
+
+        Path dir = Paths.get(props.getBackup().getDir()).resolve(".restore");
+        Path tmp;
+        try {
+            Files.createDirectories(dir);
+            tmp = Files.createTempFile(dir, "restore-", ".tar.gz");
+            try (InputStream in = file.getInputStream()) {
+                Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            throw new BizException(40000, "备份包读取失败");
+        }
+
+        RestoreJob job = new RestoreJob();
+        String original = file.getOriginalFilename();
+        job.setFileName(original == null || original.isEmpty()
+                ? tmp.getFileName().toString() : original);
+        job.setFilePath(tmp.toString());
+        job.setSize(file.getSize());
+        job.setStrategy(s);
+        job.setStatus("RUNNING");
+        job.setCreatedBy(createdBy);
+        job.setCreatedAt(Instant.now());
+        restoreJobMapper.insert(job);
+
+        Long id = job.getId();
+        backupExecutor.execute(() -> runRestore(id));
+        return job;
+    }
+
+    private void runRestore(Long jobId) {
+        RestoreJob job = restoreJobMapper.selectById(jobId);
+        if (job == null) {
+            log.warn("restore job {} disappeared before execution", jobId);
+            return;
+        }
+        Path tmp = Paths.get(job.getFilePath());
+        long started = System.currentTimeMillis();
+        try {
+            RestoreResult r = txTemplate.execute(st -> restoreArchive(tmp, job.getStrategy()));
+            job.setRecords(r == null ? 0 : r.records());
+            job.setFiles(r == null ? 0 : r.files());
+            job.setStatus("SUCCESS");
+            log.info("restore {} finished in {} ms ({} records, {} files)",
+                    job.getFileName(), System.currentTimeMillis() - started,
+                    job.getRecords(), job.getFiles());
+        } catch (Exception e) {
+            log.error("restore {} failed", job.getFileName(), e);
+            job.setStatus("FAILED");
+            job.setErrorMessage(truncate(e.getMessage() == null
+                    ? e.getClass().getSimpleName() : e.getMessage(), 900));
+        } finally {
+            job.setFinishedAt(Instant.now());
+            try {
+                restoreJobMapper.updateById(job);
+            } catch (Exception e) {
+                log.error("failed to update restore job {}", jobId, e);
+            }
+            try {
+                Files.deleteIfExists(tmp);
+            } catch (IOException ignored) {
+                // 临时包删不掉不影响结果
+            }
+        }
+    }
+
+    private static String normalizeStrategy(String strategy) {
         String s = strategy == null ? "ABORT" : strategy.toUpperCase();
         if (!Set.of("ABORT", "MERGE", "OVERWRITE").contains(s)) {
             throw BizException.badRequest("strategy 必须是 ABORT / MERGE / OVERWRITE");
         }
+        return s;
+    }
+
+    /** 备份与恢复互斥：两者都动全库，串行跑才有意义 */
+    private void assertIdle() {
+        Long backups = backupMapper.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<BackupRecord>()
+                        .eq(BackupRecord::getStatus, "RUNNING"));
+        Long restores = restoreJobMapper.selectCount(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RestoreJob>()
+                        .eq(RestoreJob::getStatus, "RUNNING"));
+        boolean busy = (backups != null && backups > 0) || (restores != null && restores > 0);
+        if (busy) {
+            throw new BizException(40900, "已有备份或恢复任务在执行，请等它结束再试");
+        }
+    }
+
+    public List<RestoreJob> listRestores() {
+        return restoreJobMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RestoreJob>()
+                        .orderByDesc(RestoreJob::getCreatedAt)
+                        .last("limit 20"));
+    }
+
+    /**
+     * 真正的恢复逻辑，由后台线程在事务里调用。
+     *
+     * @param tmp      本地备份包（已落盘）
+     * @param strategy ABORT（默认）/ MERGE / OVERWRITE
+     */
+    public RestoreResult restoreArchive(Path tmp, String strategy) {
+        String s = normalizeStrategy(strategy);
 
         Manifest m;
-        Path tmp;
         try {
-            tmp = Files.createTempFile("fcloud-restore-", ".tar.gz");
-            try (InputStream in = file.getInputStream()) {
-                Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
-            }
             m = readManifest(tmp);
         } catch (IOException e) {
             throw new BizException(40000, "备份包读取失败");
@@ -442,8 +664,10 @@ public class BackupService {
         List<String> conflicts = detectConflicts(m);
 
         if ("ABORT".equals(s) && !conflicts.isEmpty()) {
-            throw new BizException(40900,
-                    "发现 code 冲突，已整体回滚：" + String.join(", ", conflicts));
+            String detail = conflicts.size() > 15
+                    ? String.join(", ", conflicts.subList(0, 15)) + " 等共 " + conflicts.size() + " 项"
+                    : String.join(", ", conflicts);
+            throw new BizException(40900, "发现冲突，已整体回滚：" + detail);
         }
 
         if ("OVERWRITE".equals(s)) {
@@ -457,6 +681,7 @@ public class BackupService {
         Set<Long> skipUsers = new HashSet<>();
         Set<Long> skipTemplates = new HashSet<>();
         Set<Long> skipTokens = new HashSet<>();
+        Set<Long> skipPats = new HashSet<>();
 
         Set<Long> skipFiles = new HashSet<>();
         Set<Long> skipFileVersions = new HashSet<>();
@@ -492,17 +717,18 @@ public class BackupService {
             }
             for (Object[] key : existingModuleKeys()) {
                 for (Map<String, Object> o : m.modules) {
-                    // applicationId 可能为 null（共享模块），必须用 Objects.equals
-                    if (java.util.Objects.equals(key[0], o.get("applicationId"))
-                            && java.util.Objects.equals(key[1], o.get("code"))) {
+                    // applicationId 可能为 null（共享模块），且 manifest 里的 Long 是字符串，
+                    // 必须归一化后再比，否则私用模块永远匹配不上、插入时撞主键
+                    if (java.util.Objects.equals(key[0], num(o.get("applicationId")))
+                            && java.util.Objects.equals(key[1], str(o.get("code")))) {
                         skipModules.add(num(o.get("id")));
                     }
                 }
             }
             for (Object[] key : existingVariableKeys()) {
                 for (Map<String, Object> o : m.variables) {
-                    if (java.util.Objects.equals(key[0], o.get("moduleId"))
-                            && java.util.Objects.equals(key[1], o.get("varKey"))) {
+                    if (java.util.Objects.equals(key[0], num(o.get("moduleId")))
+                            && java.util.Objects.equals(key[1], str(o.get("varKey")))) {
                         skipVars.add(num(o.get("id")));
                     }
                 }
@@ -519,6 +745,19 @@ public class BackupService {
                     if (t.getTokenHash().equals(o.get("tokenHash"))) {
                         skipTokens.add(num(o.get("id")));
                     }
+                }
+            }
+            // PAT 按 token_hash 跳过；同时避免与已有 id 撞主键
+            Set<String> existPatHashes = new HashSet<>();
+            Set<Long> existPatIds = new HashSet<>();
+            for (Pat p : patMapper.selectList(null)) {
+                existPatHashes.add(p.getTokenHash());
+                existPatIds.add(p.getId());
+            }
+            for (Map<String, Object> o : m.pats) {
+                if (existPatHashes.contains(str(o.get("tokenHash")))
+                        || existPatIds.contains(num(o.get("id")))) {
+                    skipPats.add(num(o.get("id")));
                 }
             }
             // 文件按 (module,env,fileKey) 跳过；文件版本按 (fileId,version) 跳过
@@ -608,18 +847,17 @@ public class BackupService {
         counts += insertTemplates(m.templates, skipTemplates);
         counts += insertTemplateVars(m.templateVars, skipTemplateVars);
         counts += insertTokens(m.tokens, skipTokens);
+        counts += insertPats(m.pats, m.users, skipPats);
+        counts += upsertSettings(m.settings, "OVERWRITE".equals(s));
 
         // 文件二进制解包到 storage
         int filesRestored = extractFileBinaries(tmp);
 
-        // §9.2 恢复后清理 Redis 中 Token 缓存
+        // §9.2 恢复后清理 Redis 中 Token 缓存（流水线 Token 与 PAT 各一套前缀）
         tokenService.clearCache();
+        patService.clearCache();
 
-        try {
-            Files.deleteIfExists(tmp);
-        } catch (IOException ignored) {
-        }
-
+        // 临时包由 runRestore 统一清理（成功/失败都删），这里不碰文件
         return new RestoreResult(s, counts, filesRestored);
     }
 
@@ -643,8 +881,13 @@ public class BackupService {
         throw new BizException(40000, "备份包缺少 manifest.json");
     }
 
+    /**
+     * ABORT 模式的冲突检测：覆盖目标库全部唯一约束，
+     * 否则冲突会在插入阶段以 SQL 异常形式爆掉，而不是干净的 40900。
+     */
     private List<String> detectConflicts(Manifest m) {
         List<String> out = new ArrayList<>();
+
         Set<String> appCodes = new HashSet<>();
         for (Application a : applicationMapper.selectList(null)) {
             appCodes.add(a.getCode());
@@ -653,6 +896,29 @@ public class BackupService {
         for (Environment e : environmentMapper.selectList(null)) {
             envCodes.add(e.getCode());
         }
+        Set<String> userEmails = new HashSet<>();
+        for (User u : userMapper.selectList(null)) {
+            if (u.getEmail() != null) {
+                userEmails.add(u.getEmail().toLowerCase());
+            }
+        }
+        Set<String> templateCodes = new HashSet<>();
+        for (Template t : templateMapper.selectList(null)) {
+            templateCodes.add(t.getCode());
+        }
+        Set<String> tokenHashes = new HashSet<>();
+        for (ApiToken t : tokenMapper.selectList(null)) {
+            tokenHashes.add(t.getTokenHash());
+        }
+        Set<String> patHashes = new HashSet<>();
+        for (Pat p : patMapper.selectList(null)) {
+            patHashes.add(p.getTokenHash());
+        }
+        Set<String> moduleKeys = new HashSet<>();
+        for (Object[] k : existingModuleKeys()) {
+            moduleKeys.add(k[0] + "/" + k[1]);
+        }
+
         for (Map<String, Object> o : m.applications) {
             if (appCodes.contains(o.get("code"))) {
                 out.add("app:" + o.get("code"));
@@ -665,11 +931,32 @@ public class BackupService {
         }
         for (Map<String, Object> o : m.modules) {
             String key = o.get("applicationId") + "/" + o.get("code");
-            if (existingModuleKeys().stream()
-                    .anyMatch(k -> (k[0] + "/" + k[1]).equals(key))) {
+            if (moduleKeys.contains(key)) {
                 out.add("module:" + key);
             }
-        }        return out;
+        }
+        for (Map<String, Object> o : m.users) {
+            String email = str(o.get("email"));
+            if (email != null && userEmails.contains(email.toLowerCase())) {
+                out.add("user:" + email);
+            }
+        }
+        for (Map<String, Object> o : m.templates) {
+            if (templateCodes.contains(o.get("code"))) {
+                out.add("template:" + o.get("code"));
+            }
+        }
+        for (Map<String, Object> o : m.tokens) {
+            if (tokenHashes.contains(o.get("tokenHash"))) {
+                out.add("token:" + o.get("tokenPrefix"));
+            }
+        }
+        for (Map<String, Object> o : m.pats) {
+            if (patHashes.contains(o.get("tokenHash"))) {
+                out.add("pat:" + o.get("tokenPrefix"));
+            }
+        }
+        return out;
     }
 
     private List<Object[]> existingModuleKeys() {
@@ -698,8 +985,10 @@ public class BackupService {
                 + "fch_variable_override, fch_variable, fch_file_version, fch_file, "
                 + "fch_module_member, fch_module_subscription, fch_module_env, "
                 + "fch_module, fch_application, fch_environment, "
-                + "fch_template_var, fch_template, fch_api_token, fch_user "
+                + "fch_template_var, fch_template, fch_api_token, fch_pat, fch_user "
                 + "CASCADE");
+        // fch_system_setting 故意不参与 TRUNCATE：旧备份包（v1）里没有 settings，
+        // 清空会把 GitLab 接入配置一起抹掉，导致恢复完登不进来。
     }
 
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
@@ -763,6 +1052,8 @@ public class BackupService {
             a.setName(str(o.get("name")));
             a.setDescription(str(o.get("description")));
             a.setSortOrder(intval(o.get("sortOrder")));
+            a.setGitlabProjectId(num(o.get("gitlabProjectId")));
+            a.setRepoUrl(str(o.get("repoUrl")));
             a.setCreatedBy(num(o.get("createdBy")));
             a.setCreatedAt(instant(o.get("createdAt")));
             a.setUpdatedAt(instant(o.get("updatedAt")));
@@ -1003,6 +1294,94 @@ public class BackupService {
     }
 
     /**
+     * PAT 绑定用户：恢复时用户可能按 email 命中已有账号（id 不同），
+     * 先按 id 找，找不到再按 email 找回真实 id，避免外键失败。
+     */
+    private int insertPats(List<Map<String, Object>> rows,
+                           List<Map<String, Object>> manifestUsers,
+                           Set<Long> skip) {
+        Map<Long, String> emailById = new HashMap<>();
+        for (Map<String, Object> u : manifestUsers) {
+            emailById.put(num(u.get("id")), str(u.get("email")));
+        }
+        int n = 0;
+        for (Map<String, Object> o : rows) {
+            Long oldId = num(o.get("id"));
+            if (skip.contains(oldId)) {
+                continue;
+            }
+            Long userId = resolveUserId(num(o.get("userId")), emailById);
+            if (userId == null) {
+                log.warn("skip PAT '{}': owner user {} not found after restore",
+                        o.get("name"), o.get("userId"));
+                continue;
+            }
+            Pat p = new Pat();
+            p.setId(oldId);
+            p.setUserId(userId);
+            p.setName(str(o.get("name")));
+            p.setTokenHash(str(o.get("tokenHash")));
+            p.setTokenPrefix(str(o.get("tokenPrefix")));
+            p.setScopes(str(o.get("scopes")));
+            p.setExpiresAt(instant(o.get("expiresAt")));
+            p.setRevoked(bool(o.get("revoked")));
+            p.setCreatedAt(instant(o.get("createdAt")));
+            p.setLastUsedAt(instant(o.get("lastUsedAt")));
+            patMapper.insert(p);
+            n++;
+        }
+        return n;
+    }
+
+    private Long resolveUserId(Long oldUserId, Map<Long, String> emailById) {
+        if (oldUserId == null) {
+            return null;
+        }
+        if (userMapper.selectById(oldUserId) != null) {
+            return oldUserId;
+        }
+        String email = emailById.get(oldUserId);
+        if (email == null) {
+            return null;
+        }
+        User u = userMapper.selectOne(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<User>()
+                        .eq(User::getEmail, email));
+        return u == null ? null : u.getId();
+    }
+
+    /**
+     * 系统设置按主键 upsert。
+     * OVERWRITE 覆盖；ABORT / MERGE 只补目标库缺失的键，不动现场配置。
+     */
+    private int upsertSettings(List<Map<String, Object>> rows, boolean overwrite) {
+        int n = 0;
+        for (Map<String, Object> o : rows) {
+            String key = str(o.get("settingKey"));
+            if (key == null || key.isEmpty()) {
+                continue;
+            }
+            SystemSetting exist = settingMapper.selectById(key);
+            if (exist != null && !overwrite) {
+                continue;
+            }
+            SystemSetting st = new SystemSetting();
+            st.setSettingKey(key);
+            st.setSettingValue(str(o.get("settingValue")));
+            st.setEncrypted(bool(o.get("encrypted")));
+            st.setUpdatedBy(num(o.get("updatedBy")));
+            st.setUpdatedAt(exist == null ? instant(o.get("updatedAt")) : Instant.now());
+            if (exist == null) {
+                settingMapper.insert(st);
+            } else {
+                settingMapper.updateById(st);
+            }
+            n++;
+        }
+        return n;
+    }
+
+    /**
      * 把 files/ 下的二进制解包到 storage 对应路径。
      * 包内路径：files/{moduleId}/{fileId}/v{n}/{original}
      */
@@ -1030,20 +1409,39 @@ public class BackupService {
 
     // ---------------- 类型转换 ----------------
 
+    /**
+     * manifest 里的 Long 会被 JacksonConfig 的 ToStringSerializer 写成字符串
+     * （雪花 ID 序列化规则对 ObjectMapper 全局生效），因此这里必须同时接受
+     * Number 和 String，否则恢复时直接 ClassCastException。
+     */
     private static Long num(Object o) {
-        return o == null ? null : ((Number) o).longValue();
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Number n) {
+            return n.longValue();
+        }
+        String s = o.toString().trim();
+        return s.isEmpty() ? null : Long.parseLong(s);
     }
 
     private static Long longval(Object o) {
-        return o == null ? null : ((Number) o).longValue();
+        return num(o);
     }
 
     private static Integer intval(Object o) {
-        return o == null ? null : ((Number) o).intValue();
+        Long v = num(o);
+        return v == null ? null : v.intValue();
     }
 
     private static Boolean bool(Object o) {
-        return o == null ? null : (Boolean) o;
+        if (o == null) {
+            return null;
+        }
+        if (o instanceof Boolean b) {
+            return b;
+        }
+        return Boolean.parseBoolean(o.toString());
     }
 
     private static String str(Object o) {
@@ -1086,6 +1484,10 @@ public class BackupService {
         public List<Map<String, Object>> templates = new ArrayList<>();
         public List<Map<String, Object>> templateVars = new ArrayList<>();
         public List<Map<String, Object>> tokens = new ArrayList<>();
+        /** v2 新增：MCP 个人令牌（仅 hash） */
+        public List<Map<String, Object>> pats = new ArrayList<>();
+        /** v2 新增：系统设置（GitLab 接入、MCP 开关；加密项为密文） */
+        public List<Map<String, Object>> settings = new ArrayList<>();
     }
 
     public record RestoreResult(String strategy, int records, int files) {

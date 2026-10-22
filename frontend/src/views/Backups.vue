@@ -8,7 +8,7 @@
         </div>
       </div>
       <button class="btn btn-primary" :disabled="backing" @click="createBackup">
-        <ProtoIcon name="archive" :size="15" />立即备份
+        <ProtoIcon name="archive" :size="15" />{{ backing ? '备份中…' : '立即备份' }}
       </button>
     </div>
 
@@ -23,28 +23,48 @@
           <thead>
             <tr>
               <th>文件名</th>
-              <th style="width: 96px">大小</th>
-              <th style="width: 84px">类型</th>
+              <th style="width: 90px">大小</th>
+              <th style="width: 76px">类型</th>
+              <th style="width: 88px">状态</th>
               <th style="width: 150px">生成时间</th>
-              <th style="width: 80px"></th>
+              <th style="width: 72px"></th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="row in records" :key="row.id">
-              <td class="mono file">{{ row.fileName }}</td>
-              <td class="num muted">{{ formatSize(row.size) }}</td>
+              <td class="mono file" :title="row.errorMessage || row.fileName">
+                {{ row.fileName }}
+              </td>
+              <td class="num muted">
+                {{ row.status === 'RUNNING' ? '—' : formatSize(row.size) }}
+              </td>
               <td>
                 <span class="tag" :class="row.type === 'MANUAL' ? 'tag-shared' : 'tag-plain'">
                   {{ row.type === 'MANUAL' ? '手动' : '定时' }}
                 </span>
               </td>
+              <td>
+                <span
+                  class="tag"
+                  :class="statusClass(row.status)"
+                  :title="row.errorMessage || ''"
+                >
+                  {{ statusLabel(row.status) }}
+                </span>
+              </td>
               <td class="muted num">{{ fmt(row.createdAt) }}</td>
               <td>
-                <button class="btn-ghost" @click="download(row)">下载</button>
+                <button
+                  class="btn-ghost"
+                  :disabled="row.status !== 'SUCCESS'"
+                  @click="download(row)"
+                >
+                  下载
+                </button>
               </td>
             </tr>
             <tr v-if="!records.length">
-              <td colspan="5" class="empty-row">
+              <td colspan="6" class="empty-row">
                 <el-icon :size="26" color="#c3c9d4"><Box /></el-icon>
                 <div>还没有备份，点右上「立即备份」生成第一份。</div>
               </td>
@@ -110,11 +130,33 @@
             type="primary"
             style="width: 100%; margin-top: 12px"
             :loading="restoring"
-            :disabled="!canRestore"
+            :disabled="!canRestore || restoring"
             @click="doRestore"
           >
-            开始恢复
+            {{ restoring ? '恢复中…' : '开始恢复' }}
           </el-button>
+
+          <div v-if="lastRestore" class="restore-last">
+            <div class="rl-head">
+              <span class="tag" :class="statusClass(lastRestore.status)">
+                {{ statusLabel(lastRestore.status) }}
+              </span>
+              <span class="rl-meta">
+                {{ lastRestore.strategy }} · {{ fmt(lastRestore.finishedAt || lastRestore.createdAt) }}
+              </span>
+            </div>
+            <div v-if="lastRestore.status === 'SUCCESS'" class="rl-detail">
+              {{ lastRestore.records ?? 0 }} 条记录 · {{ lastRestore.files ?? 0 }} 个文件
+            </div>
+            <div
+              v-else-if="lastRestore.status === 'FAILED'"
+              class="rl-detail err"
+              :title="lastRestore.errorMessage || ''"
+            >
+              {{ lastRestore.errorMessage || '恢复失败' }}
+            </div>
+            <div v-else class="rl-detail">正在解包导入，完成后这里会显示结果。</div>
+          </div>
         </div>
       </div>
     </div>
@@ -122,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Download,
@@ -141,9 +183,26 @@ interface BackupRow {
   size: number
   type: string
   createdAt: string
+  /** RUNNING | SUCCESS | FAILED；老记录没有该字段时按 SUCCESS 处理 */
+  status?: string
+  errorMessage?: string
+  finishedAt?: string
+}
+
+interface RestoreJobRow {
+  id: Id
+  fileName: string
+  strategy: string
+  status: string
+  records?: number
+  files?: number
+  errorMessage?: string
+  createdAt: string
+  finishedAt?: string
 }
 
 const records = ref<BackupRow[]>([])
+const restoreJobs = ref<RestoreJobRow[]>([])
 const backing = ref(false)
 const restoring = ref(false)
 const strategy = ref<'ABORT' | 'MERGE' | 'OVERWRITE'>('ABORT')
@@ -151,6 +210,8 @@ const overwriteConfirm = ref('')
 const restoreFile = ref<File | null>(null)
 const dragOver = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+
+const lastRestore = computed<RestoreJobRow | null>(() => restoreJobs.value[0] || null)
 
 const strategies = [
   { value: 'ABORT' as const, label: 'ABORT（默认）', desc: '发现冲突整体回滚并列出冲突项' },
@@ -184,13 +245,75 @@ async function load() {
   records.value = await api.get('/api/console/admin/backups')
 }
 
+function statusOf(row: BackupRow) {
+  return row.status || 'SUCCESS'
+}
+
+function statusLabel(status?: string) {
+  if (status === 'RUNNING') return '进行中'
+  if (status === 'FAILED') return '失败'
+  return '成功'
+}
+
+function statusClass(status?: string) {
+  if (status === 'RUNNING') return 'tag-warn'
+  if (status === 'FAILED') return 'tag-danger'
+  return 'tag-ok'
+}
+
+// ---- 备份任务轮询 ----
+let pollTimer: number | null = null
+let pollTicks = 0
+
+function stopPoll() {
+  if (pollTimer !== null) {
+    window.clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+async function pollOnce(targetId?: Id) {
+  pollTicks++
+  try {
+    await load()
+  } catch {
+    // 单次请求失败不终止轮询，下一轮再试
+    return
+  }
+  if (records.value.some((r) => statusOf(r) === 'RUNNING')) {
+    if (pollTicks > 900) {
+      // 30 分钟还没结束，大概率后端已经异常，停止轮询避免无限打接口
+      stopPoll()
+      backing.value = false
+      ElMessage.warning('备份任务长时间未结束，请查看服务端日志')
+    }
+    return
+  }
+  stopPoll()
+  backing.value = false
+  const target = records.value.find((r) => String(r.id) === String(targetId))
+  if (!target) return
+  if (statusOf(target) === 'SUCCESS') {
+    ElMessage.success(`备份完成：${formatSize(target.size)}`)
+  } else if (statusOf(target) === 'FAILED') {
+    ElMessage.error(`备份失败：${target.errorMessage || '未知原因'}`)
+  }
+}
+
+function startPoll(targetId?: Id) {
+  stopPoll()
+  pollTicks = 0
+  backing.value = true
+  pollTimer = window.setInterval(() => pollOnce(targetId), 2000)
+}
+
 async function createBackup() {
   backing.value = true
   try {
-    await api.post('/api/console/admin/backups')
-    ElMessage.success('备份完成')
-    await load()
-  } finally {
+    const rec = await api.post<BackupRow>('/api/console/admin/backups')
+    ElMessage.success('备份任务已提交，正在后台打包…')
+    startPoll(rec.id)
+  } catch {
     backing.value = false
   }
 }
@@ -227,22 +350,87 @@ async function doRestore() {
     const form = new FormData()
     form.append('file', restoreFile.value)
     form.append('strategy', strategy.value)
-    const res = await api.upload<{ strategy: string; records: number; files: number }>(
+    // 上传即返回任务 id，解包导入在后台跑；只等上传本身，30 分钟足够大包
+    const job = await api.upload<RestoreJobRow>(
       '/api/console/admin/backups/restore',
-      form
+      form,
+      1800000
     )
-    ElMessage.success(
-      `恢复完成：策略 ${res.strategy}，${res.records} 条记录，${res.files} 个文件`
-    )
+    ElMessage.success('恢复任务已提交，正在后台执行…')
     overwriteConfirm.value = ''
     restoreFile.value = null
-    await load()
-  } finally {
+    startRestorePoll(job.id)
+  } catch {
     restoring.value = false
   }
 }
 
-onMounted(load)
+// ---- 恢复任务轮询 ----
+let restoreTimer: number | null = null
+let restoreTicks = 0
+
+function stopRestorePoll() {
+  if (restoreTimer !== null) {
+    window.clearInterval(restoreTimer)
+    restoreTimer = null
+  }
+}
+
+async function loadRestores() {
+  restoreJobs.value = await api.get('/api/console/admin/backups/restores')
+}
+
+async function pollRestoreOnce(targetId?: Id) {
+  restoreTicks++
+  try {
+    await loadRestores()
+  } catch {
+    return
+  }
+  const target = restoreJobs.value.find((j) => String(j.id) === String(targetId))
+  if (target && target.status === 'RUNNING') {
+    if (restoreTicks > 1800) {
+      stopRestorePoll()
+      restoring.value = false
+      ElMessage.warning('恢复任务长时间未结束，请查看服务端日志')
+    }
+    return
+  }
+  stopRestorePoll()
+  restoring.value = false
+  await load()
+  if (!target) return
+  if (target.status === 'SUCCESS') {
+    ElMessage.success(
+      `恢复完成：${target.records ?? 0} 条记录，${target.files ?? 0} 个文件`
+    )
+  } else if (target.status === 'FAILED') {
+    ElMessage.error(`恢复失败：${target.errorMessage || '未知原因'}`)
+  }
+}
+
+function startRestorePoll(targetId?: Id) {
+  stopRestorePoll()
+  restoreTicks = 0
+  restoring.value = true
+  restoreTimer = window.setInterval(() => pollRestoreOnce(targetId), 2000)
+}
+
+onMounted(async () => {
+  await Promise.all([load(), loadRestores()])
+  // 刷新页面时如果还有任务在跑，接着轮询
+  if (records.value.some((r) => statusOf(r) === 'RUNNING')) {
+    startPoll()
+  }
+  if (restoreJobs.value.some((j) => j.status === 'RUNNING')) {
+    startRestorePoll()
+  }
+})
+
+onBeforeUnmount(() => {
+  stopPoll()
+  stopRestorePoll()
+})
 </script>
 
 <style scoped>
@@ -378,6 +566,44 @@ onMounted(load)
 
 .btn-ghost:hover {
   background: var(--surface-3);
+}
+
+.btn-ghost:disabled {
+  color: var(--text-3);
+  background: transparent;
+  cursor: not-allowed;
+}
+
+.restore-last {
+  margin-top: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.rl-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rl-meta {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.rl-detail {
+  margin-top: 5px;
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rl-detail.err {
+  color: var(--danger);
 }
 
 .drop-zone {
