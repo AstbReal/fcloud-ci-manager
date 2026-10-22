@@ -1,11 +1,11 @@
 package ci.fcloud.hub.pipeline;
 
+import ci.fcloud.hub.common.LocalCache;
 import ci.fcloud.hub.token.ApiToken;
 import ci.fcloud.hub.token.ApiTokenService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -40,7 +40,7 @@ public class PipelineAuthFilter extends OncePerRequestFilter {
     private static final String RATE_PREFIX = "chub:rate:";
 
     private final ApiTokenService tokenService;
-    private final StringRedisTemplate redis;
+    private final LocalCache cache;
     private final ObjectMapper objectMapper;
     private final ci.fcloud.hub.config.FcloudProperties props;
 
@@ -97,11 +97,8 @@ public class PipelineAuthFilter extends OncePerRequestFilter {
         }
         long minute = System.currentTimeMillis() / 60000L;
         String key = RATE_PREFIX + token.getId() + ":" + minute;
-        Long n = redis.opsForValue().increment(key);
-        if (n != null && n == 1L) {
-            redis.expire(key, Duration.ofSeconds(120));
-        }
-        return n == null || n <= perMinute;
+        long n = cache.increment(key, Duration.ofSeconds(120));
+        return n <= perMinute;
     }
 
     private void writeError(HttpServletResponse response, int status, String message)

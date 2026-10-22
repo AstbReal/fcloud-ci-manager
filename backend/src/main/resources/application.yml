@@ -33,27 +33,12 @@ spring:
     table: fch_flyway_schema_history
     validate-on-migrate: true
 
-  redis:
-    host: ${FCLOUD_REDIS_HOST:127.0.0.1}
-    port: ${FCLOUD_REDIS_PORT:6379}
-    password: ${FCLOUD_REDIS_PASSWORD:}
-    database: ${FCLOUD_REDIS_DB:0}
-    timeout: 5000
-    connect-timeout: 5000
-    lettuce:
-      pool:
-        max-active: 8
-        max-idle: 8
-        min-idle: 0
-        max-wait: 3000
-      shutdown-timeout: 200ms
-
   security:
     oauth2:
       client:
         registration:
           gitlab:
-            # 本地开发默认指向 deploy/gitlab-lite（模拟 GitLab OAuth2，8929 端口）。
+            # 本地开发默认指向 .ci/gitlab-lite（模拟 GitLab OAuth2，8929 端口）。
             # 生产环境由 FCLOUD_GITLAB_CLIENT_ID/_SECRET 环境变量覆盖，行为不变。
             client-id: ${FCLOUD_GITLAB_CLIENT_ID:test-client-id}
             client-secret: ${FCLOUD_GITLAB_CLIENT_SECRET:test-client-secret}
@@ -169,10 +154,10 @@ management:
       enabled: true
     readinessstate:
       enabled: true
-    # readiness 显式包含 DB 与 Redis（§11.2：含 DB/Redis）
+    # readiness 显式包含 DB（Redis 已由进程内缓存替代，见 D26）
     group:
       readiness:
-        include: readinessState,db,redis
+        include: readinessState,db
 
 springdoc:
   api-docs:

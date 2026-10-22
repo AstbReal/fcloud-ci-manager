@@ -1,6 +1,8 @@
-# 本地开发依赖：PostgreSQL 16 + Redis 7（§11.5）
-# 用法：docker compose -f deploy/docker-compose.dev.yml up -d
-# 说明：镜像 tag 对齐本机已存在且与生产一致的 16-alpine / 7.2-alpine。
+# 本地开发依赖：PostgreSQL 16（§11.5）
+# 用法：docker compose -f .ci/docker-compose.dev.yml up -d
+#
+# 注意：Redis 已从技术栈移除（改用进程内缓存，见 README 决策 D26），
+# 这里不再提供 redis 服务；已有的 fcloud-dev-redis 容器可以删掉。
 services:
   postgres:
     image: postgres:16-alpine
@@ -22,21 +24,5 @@ services:
       timeout: 5s
       retries: 20
 
-  redis:
-    image: redis:7.2-alpine
-    container_name: fcloud-dev-redis
-    command: ["redis-server", "--appendonly", "no", "--save", ""]
-    ports:
-      - "6379:6379"
-    volumes:
-      - fcloud-dev-redis:/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
 volumes:
   fcloud-dev-pg:
-  fcloud-dev-redis:

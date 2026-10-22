@@ -22,12 +22,12 @@
 | ORM | MyBatis-Plus 3.5.3.2（`ASSIGN_ID` 雪花主键，BIGINT） |
 | 数据库 | PostgreSQL 16 |
 | 迁移 | Flyway 9.22.3（Boot 2.7 默认 8.5.13 不识别 PG16，需显式升级） |
-| 缓存 | Redis 7（Lettuce） |
+| 缓存 | 进程内 `LocalCache`（无外部依赖，见决策 D26） |
 | 认证 | Spring Security + OAuth2 Client（GitLab）+ JJWT 0.11.5 |
 | 文档 | springdoc-openapi-ui 1.6.15 |
 | 其他 | Lombok、validation、aop、actuator、commons-compress 1.25.0 |
 | 前端 | Vue 3 + Vite + TypeScript + Pinia + Vue Router + Element Plus + vuedraggable@4 |
-| 镜像 | Ubuntu 22.04 + OpenJDK 17 + PostgreSQL 16 + Redis 7 + nginx + supervisord |
+| 镜像 | Alpine 两级镜像：base（JDK17 + PostgreSQL + nginx）+ 应用层（见 D15 / D26） |
 
 ---
 
@@ -41,7 +41,7 @@ fcloud-ci-hub/
 │   ├── gradlew / gradlew.bat    # Gradle 7.5.1 wrapper（已锁定版本）
 │   ├── src/main/java/ci/fcloud/hub/
 │   │   ├── FcloudCiHubApplication.java
-│   │   ├── config/              # Security/OAuth2/Redis/Web/OpenAPI/Properties
+│   │   ├── config/              # Security/OAuth2/Web/OpenAPI/Async/Properties
 │   │   ├── common/              # ApiResponse/异常/Crypto/Audited 注解
 │   │   ├── auth/                # JWT/Cookie/OAuth SuccessHandler
 │   │   ├── user/ env/ app/ module/ template/ token/
@@ -54,12 +54,14 @@ fcloud-ci-hub/
 │       ├── application.yml
 │       └── db/migration/V1__init.sql … V5__mcp_pat.sql
 ├── frontend/                    # 前端（Vue3 + Vite + TS）
-├── deploy/
-│   ├── Dockerfile
-│   ├── supervisord.conf
-│   ├── nginx.conf.template
-│   ├── entrypoint.sh
-│   └── docker-compose.dev.yml
+├── .ci/                         # 构建与部署
+│   ├── base.Dockerfile          # 运行时底座：Node20 + JDK17 + nginx + PostgreSQL
+│   ├── Dockerfile               # 应用镜像（基于 base，不额外装包）
+│   ├── supervise.sh             # 进程守护：PG → nginx → app，崩溃自动重启
+│   ├── nginx.conf.template      # server 块模板（entrypoint 渲染）
+│   ├── entrypoint.sh            # initdb / 建库建用户 / 渲染 nginx 配置
+│   ├── build.sh                 # 构建 base 与应用镜像
+│   └── docker-compose.dev.yml   # 本地 PG
 ├── docs/
 └── README.md
 ```
@@ -68,13 +70,13 @@ fcloud-ci-hub/
 
 ## 3. 快速开始
 
-### 3.1 本地开发依赖（PG + Redis）
+### 3.1 本地开发依赖（PG）
 
 ```bash
-docker compose -f deploy/docker-compose.dev.yml up -d
+docker compose -f .ci/docker-compose.dev.yml up -d
 ```
 
-> 本机 Docker 在 WSL2 中，PG/Redis 跑在 WSL 的容器里；
+> 本机 Docker 在 WSL2 中，PG 跑在 WSL 的容器里（Redis 已移除，见 D26）；
 > 后端用 Windows 的 `backend/gradlew` 启动，通过 WSL IP 访问。详见 §7。
 
 ### 3.2 启动后端
@@ -98,14 +100,15 @@ Vite 代理 `/api`、`/oauth2`、`/oauth` → `http://localhost:8080`。
 ### 3.4 端到端 OAuth 登录测试（GitLab Lite）
 
 真实 GitLab 镜像约 2.5GB、需 4GB+ 内存。为便于本地/CI 端到端验证登录链路，
-仓库内置了 `deploy/gitlab-lite/` —— 一个实现了 GitLab OAuth2 契约的轻量替身：
+仓库内置了 `.ci/gitlab-lite/` —— 一个实现了 GitLab OAuth2 契约的轻量替身：
 
 ```bash
-# 1) 构建 hub 镜像（若已构建可跳过）
-bash deploy/build.sh
+# 1) 构建 hub 镜像（首次需要先构建底座，见 §6）
+bash .ci/build.sh base      # 仅首次；会拉 node:20-alpine
+bash .ci/build.sh
 
 # 2) 构建并启动 gitlab-lite + fcloud-ci-hub（同一 compose 网络）
-docker compose -f deploy/gitlab-lite/docker-compose.yml up -d --build
+docker compose -f .ci/gitlab-lite/docker-compose.yml up -d --build
 
 # 3) 浏览器打开 http://127.0.0.1:18080 → 自动跳转到 GitLab 授权页
 #    选择任意内置用户（root/alice/bob/noemail）授权即可登录
@@ -133,7 +136,7 @@ gitlab-lite 实现的端点（与真实 GitLab 契约一致）：
 4. 空库首登用户 → `SYSTEM_ADMIN`；第二用户 → `NONE`
 5. `noemail` 用户 email 为 null → 回退 `noemail@<gitlab host 域名>` 并记录日志
 
-> 注意：`deploy/gitlab-lite/` 仅用于测试，**非生产**。生产请接真实 GitLab，
+> 注意：`.ci/gitlab-lite/` 仅用于测试，**非生产**。生产请接真实 GitLab，
 > 按 §11.3 配置 `FCLOUD_GITLAB_BASE_URL` / `_CLIENT_ID` / `_CLIENT_SECRET`。
 
 ---
@@ -163,7 +166,7 @@ gitlab-lite 实现的端点（与真实 GitLab 契约一致）：
 
 | # | 决策点 | 采用方案 | 理由 |
 | --- | --- | --- | --- |
-| D1 | `deploy/docker-compose.dev.yml` 的镜像 tag | 用 `postgres:16-alpine` / `redis:7.2-alpine` | 与生产 §11.2 的 PG16/Redis7 大版本一致；避免本地重复拉取 |
+| D1 | `.ci/docker-compose.dev.yml` 的镜像 tag | 只用 `postgres:16-alpine` | 与生产 §11.2 的 PG16 大版本一致；Redis 已移除（D26），不再重复拉取 |
 | D2 | `fcloud.storage.keep-versions` 等可配项 | 在 `application.yml` 显式暴露 | 文档 §2.4 说"可配置"，但不给默认名；用 `FCLOUD_FILE_KEEP_VERSIONS` 显式化 |
 | D3 | 前端构建产物拷贝 | `bootJar` 依赖 `copyFrontend` 任务 | §11.5 说"构建时拷入"；用 Gradle 任务而非 Dockerfile 单独 COPY，保证 `bootRun` 也能看到 |
 | D4 | 实体基类不启用逻辑删除 | `BaseEntity` 无 `deleted` 字段，`mybatis-plus.global-config.db-config` 不配 `logic-delete-field` | §3 的 schema 没有 `deleted` 列；删除一律真实删除 + 级联（§5.3/§5.4），符合"显式、可审计" |
@@ -177,17 +180,18 @@ gitlab-lite 实现的端点（与真实 GitLab 契约一致）：
 | D12 | 不启用逻辑删除 | `BaseEntity` 无 `deleted`，`mybatis-plus.global-config.db-config` 不配 `logic-delete-field` | 同 D4；§3 schema 无该列 |
 | D13 | `Environment.parentEnvId` 的显式/隐式设置 | 加非持久化字段 `parentEnvIdSet`，自定义 setter 在反序列化时置位 | 需区分"不修改继承关系"（JSON 未携带）与"解除继承"（JSON 传 `null`） |
 | D14 | 请求体中文导致 `Invalid UTF-8` | 验收脚本统一用 ASCII 载荷 | Git Bash/curl 在 Windows 下以 GBK 发送，服务端按 UTF-8 解析；非产品缺陷，属测试脚本环境问题 |
-| D15 | 单镜像基础镜像 | 用 `postgres:16-alpine` 作底座（自带 PG16），`apk` 安装 OpenJDK 17 + nginx + supervisor，Redis 7 二进制从 `redis:7.2-alpine` 复制 | 本机 Docker Hub 全部镜像源均不可达（`ubuntu:22.04` / `gradle:7.5.1-jdk17` / `node:20-bookworm-slim` 拉取均失败）。§1.3 要求的组件版本（PG16 / Redis7 / JDK17）完全不变，仅基础发行版从 Ubuntu 改为 Alpine；`deploy/Dockerfile` 中保留了原 Ubuntu 多阶段方案作为注释备选 |
-| D16 | 前后端构建位置 | 前端 `vite build` 与后端 `bootJar` 在宿主机预构建，产物由 `deploy/build.sh` 收集后 `docker build` 拷入 | 同上：构建环境无法拉取 `node`/`gradle` 基础镜像做多阶段构建；这符合 §11.5「前端构建产物拷入 static」的意图 |
+| D15 | 运行时底座 | 两级镜像：`.ci/base.Dockerfile`（`node:20-alpine` + `apk` 装 openjdk17 / nginx / postgresql / curl / su-exec）产出 `fcloud-ci-hub-base`；`.ci/Dockerfile` 在其上补 `supervise.sh` 与应用产物 | 本机 Docker Hub 部分镜像源不可达，只保留一个可复用的底座层，避免每次构建都重装 JDK/PG。组件版本仍满足 §1.3（JDK17 / PG / nginx），发行版为 Alpine |
+| D16 | 前后端构建位置 | 前端 `vite build` 与后端 `bootJar` 在宿主机预构建，产物由 `.ci/build.sh` 收集后 `docker build` 拷入 | 构建环境无法拉取 `node`/`gradle` 基础镜像做多阶段构建；这符合 §11.5「前端构建产物拷入 static」的意图 |
 | D17 | SPA fallback | 服务端 `SpaFallbackController` `forward:/index.html` + nginx `try_files` 双保险 | §11.2 要求 nginx `try_files $uri $uri/ /index.html`；应用内也做一份，便于 `bootRun` 直接调试 |
 | D18 | `/dev-login` 在 nginx 的位置 | 必须显式 `location /dev-login { proxy_pass ... }`，否则被 `location /` 的 `try_files` 吞掉返回 index.html | 实测踩坑：SPA fallback 会把未列出前缀的后端路径也当作前端路由。验收脚本曾因此拿不到 cookie |
-| D19 | 50MB 上传限制的位置 | Spring `spring.servlet.multipart.max-file-size=64MB`，业务层再校验 50MB 并抛 `40000` | Spring 默认 10MB 会先拦截返回 500；放宽到 64MB 后由业务层给出明确提示「单文件超过 50MB 限制」（§2.4） |
-| D20 | 健康检查 | `management.endpoint.health.probes.enabled=true` + `management.health.group.readiness.include=readinessState,db,redis` | §11.2 要求 `/actuator/health/liveness` 与 `/readiness`（含 DB/Redis）。Boot 2.7 需显式开启 probes，否则 404 |
+| D19 | 上传体积限制的位置 | 容器层 `max-file-size` / `max-request-size` 放宽到 `${FCLOUD_MAX_UPLOAD_MB:2048}MB`，单文件 50MB 由 `FileService` 校验；备份恢复在 nginx 单独放开 `client_max_body_size 0` | Spring 默认 10MB 会先拦截返回 500；备份包可能几百 MB，需要恢复接口能收下整包，而模块文件仍按 §2.4 限制 50MB |
+| D20 | 健康检查 | `management.endpoint.health.probes.enabled=true` + `management.health.group.readiness.include=readinessState,db` | §11.2 要求 `/actuator/health/liveness` 与 `/readiness`（含 DB）。Boot 2.7 需显式开启 probes，否则 404 |
 | D21 | OAuth 回调路径 | Spring `redirect-uri` 配标准路径 `{baseUrl}/login/oauth2/code/gitlab`，nginx 把 §6.1 的对外契约 `/oauth/gitlab/callback` 作为别名精确反代到 `/login/oauth2/code/gitlab` | Spring Security 5.7 的 `OAuth2LoginAuthenticationFilter` **硬编码**监听 `{baseUrl}/login/oauth2/code/{registrationId}`，无法配置改变；`redirect-uri` 必须与该路径一致，否则回调时 `[authorization_request_not_found]`。用 nginx 别名对外呈现 §6.1 契约，后端复用 Spring 完整校验流程 |
 | D22 | OAuth 会话策略 | `SessionCreationPolicy.IF_REQUIRED`（从 STATELESS 改） | OAuth2 授权码流程用 `HttpSessionOAuth2AuthorizationRequestRepository` 在 session 暂存 authorizationRequest（含 state 校验）；STATELESS 会导致回调时找不到授权请求。登录完成后业务请求仍走 JWT Cookie，不受影响 |
 | D23 | 反向代理后的 redirect_uri | nginx 传 `X-Forwarded-Host/Port/Proto` + Spring `server.forward-headers-strategy=framework`，并允许 `FCLOUD_OAUTH_REDIRECT_URI` 显式覆盖 | 容器内 nginx 监听 8080、宿主映射 18080，Spring 靠 `{baseUrl}` 推断会得到缺端口/错端口的地址；显式配置 + 转发头两路保证 redirect_uri 正确 |
 | D24 | email 回退 | `OAuth2LoginSuccessHandler` 里判断 email 为空时调用 `GitLabUserMapper.resolveEmail()` 回退 `{username}@{gitlab host 域名}` 并 `log.warn` | §6.1 要求 email 为 null 时回退并记录日志；回退域名取自 `FCLOUD_GITLAB_BASE_URL` 的 host |
-| D25 | 测试用 GitLab 替身 | `deploy/gitlab-lite/`：基于 `postgres:16-alpine` + Python 实现 `/oauth/authorize`、`/oauth/token`、`/api/v4/user` 三个端点，与真实 GitLab 契约一致 | 本机 Docker Hub 拉不到 `gitlab/gitlab-ce`（约 2.5GB），用它端到端验证 OAuth 授权码流程、email 回退、首登管理员；真实部署仍接 GitLab |
+| D25 | 测试用 GitLab 替身 | `.ci/gitlab-lite/`：基于 `postgres:16-alpine` + Python 实现 `/oauth/authorize`、`/oauth/token`、`/api/v4/user` 三个端点，与真实 GitLab 契约一致 | 本机 Docker Hub 拉不到 `gitlab/gitlab-ce`（约 2.5GB），用它端到端验证 OAuth 授权码流程、email 回退、首登管理员；真实部署仍接 GitLab |
+| D26 | 去掉 5 个 apk 依赖 | Redis → 进程内 `LocalCache`；supervisor → `.ci/supervise.sh`；bash → POSIX sh；gettext → `sed`；tzdata → 容器 UTC + JVM `-Duser.timezone=Asia/Shanghai` | 底座只提供 JDK/PG/nginx，其余用应用自身能力替代，镜像更薄。**代价**：黑名单/缓存/限流只在单进程内有效，不支持多副本；容器 OS 层日志时间为 UTC |
 
 （后续里程碑的补充决策继续追加到此表。）
 
@@ -227,8 +231,8 @@ gitlab-lite 实现的端点（与真实 GitLab 契约一致）：
 | 4 | `PUT /auth/me` 仅改昵称 | ✅ 200，nickname 更新为 Bob-2 |
 | 5 | 未登录访问 console API | ✅ 401（`{"code":40100,"message":"未登录或会话已过期"}`） |
 | 6 | 非管理员访问 `/api/console/admin/users` | ✅ 403（`{"code":40300,...}`） |
-| 7 | `POST /auth/logout` 清 Cookie + Redis 黑名单 | ✅ 200；旧 token 复用返回 401 |
-| 8 | Redis 黑名单 key `jwt:blacklist:{jti}` 生效 | ✅ 登出后旧 token 立即失效 |
+| 7 | `POST /auth/logout` 清 Cookie + 黑名单 | ✅ 200；旧 token 复用返回 401 |
+| 8 | 黑名单 key `jwt:blacklist:{jti}` 生效（当时在 Redis，现为 LocalCache） | ✅ 登出后旧 token 立即失效 |
 
 ### M3 验证记录
 
@@ -397,7 +401,8 @@ DB_HOST=overridden-by-notify
 
 ### M8 验证记录（§13-12 单镜像）
 
-镜像：`fcloud-ci-hub:latest`（基于 `postgres:16-alpine`，内置 PG16 + Redis 7 + JDK17 + nginx + supervisord）。
+镜像：`fcloud-ci-hub:latest`。**以下为 2026-10-19 的历史记录**，当时底座是 `postgres:16-alpine`、用 supervisord 且内置 Redis；
+当前形态（两级镜像 + `supervise.sh` + 进程内缓存）见 D15 / D26。
 
 `docker run` 命令（与 §13-12 一致）：
 
@@ -535,7 +540,7 @@ PAT 在 **Token 管理 → AI 访问令牌** 签发，明文只展示一次。�
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
-| `401 invalid token` | 令牌错误 / 过期 / 已吊销 | 重新签发；吊销后 Redis 缓存同步清除，立即失效 |
+| `401 invalid token` | 令牌错误 / 过期 / 已吊销 | 重新签发；吊销后本地缓存同步清除，立即失效 |
 | `404 session not found` | 服务重启，内存会话丢失 | 客户端重新 `initialize` 即可 |
 | 加密变量显示 `••••••` | 默认脱敏，这是预期行为 | 确需明文：令牌加 `mcp:secret` + 服务端开 `reveal-enabled` |
 | 写工具不出现 | `write-enabled=false`，或令牌没有 `mcp:write` | 两个条件都要满足 |
@@ -635,7 +640,7 @@ SHARED_URL=https://v2.internal
 ### 10.1 WSL2 默认 8 秒空闲回收导致容器频繁退出（已修复）
 
 **现象**：每次 PowerShell 调用后 WSL VM 被回收（`uptime` 始终显示 `up 0 min`），
-导致 WSL 里的 PostgreSQL / Redis 容器随之退出，表现为后端
+导致 WSL 里的 PostgreSQL 容器随之退出，表现为后端
 `HikariPool-1 - Connection is not available, request timed out` / `EOFException`。
 
 **根因**：WSL2 默认 `vmIdleTimeout` 很短（约 8 秒），当宿主机没有任何
@@ -653,14 +658,14 @@ vmIdleTimeout=3600000
 
 ### 10.2 Docker 与后端分处两处
 
-- PostgreSQL 16 / Redis 7 运行在 **WSL 的 Docker** 中（`deploy/docker-compose.dev.yml`）。
+- PostgreSQL 16 运行在 **WSL 的 Docker** 中（`.ci/docker-compose.dev.yml`）。
 - 后端 Spring Boot 用 **Windows 的 `backend/gradlew -p backend bootRun`** 启动，
-  通过 `FCLOUD_DB_HOST=172.29.214.70`（WSL IP）访问容器内的 PG/Redis。
+  通过 `FCLOUD_DB_HOST=172.29.214.70`（WSL IP）访问容器内的 PG。
 - **所有脚本统一用 Git Bash 执行**（`D:\Tools\Git\bin\bash.exe`），不用 PowerShell 拼脚本：
 
 ```bash
 # Git Bash 中
-bash .dsh-tmp/ensure-deps.sh          # 确保 WSL 里 PG/Redis 就绪
+bash .dsh-tmp/ensure-deps.sh          # 确保 WSL 里 PG 就绪
 bash .dsh-tmp/start-backend.sh        # 用 gradlew 启动后端（自动带 WSL IP）
 bash .dsh-tmp/m2-check.sh             # M2 验收脚本
 ```

@@ -135,7 +135,7 @@ function isActive(path: string) {
 const health = ref<'ok' | 'down' | 'unknown'>('unknown')
 const todoCount = ref(0)
 const healthText = computed(() => {
-  if (health.value === 'ok') return 'v1.0.0 · PG / Redis 正常'
+  if (health.value === 'ok') return 'v1.0.0 · PG 正常'
   if (health.value === 'down') return 'v1.0.0 · PG / Redis 异常'
   return 'v1.0.0 · 检测中'
 })

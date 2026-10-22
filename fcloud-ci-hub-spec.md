@@ -25,7 +25,7 @@
 | ORM | **MyBatis-Plus 3.5.3.2**（`ASSIGN_ID` 雪花主键，BIGINT）                                                          |
 | 数据库 | **PostgreSQL 16**                                                                                          |
 | 迁移  | **Flyway**（⚠️ Boot 2.7 默认 Flyway 8.5.13 不识别 PG16，需显式升级 `flyway-core:9.22.3`）                               |
-| 缓存  | **Redis 7**（Lettuce，`spring-boot-starter-data-redis`）                                                      |
+| 缓存  | **进程内缓存**（`LocalCache`：TTL + 固定窗口计数；原 Redis 7 已移除，见 README D26）                                      |
 | 认证  | Spring Security + **OAuth2 Client**（GitLab 通用 Provider）+ **JJWT 0.11.5**                                   |
 | 文档  | **springdoc-openapi-ui 1.6.15**（SB2.7 适配版本）                                                                |
 | 其他  | Lombok、spring-boot-starter-validation、spring-boot-starter-aop、actuator、**commons-compress 1.25.0**（tar.gz） |
@@ -36,7 +36,7 @@
 
 ### 1.3 镜像（单镜像，内置全部组件）
 
-**Ubuntu 22.04 + OpenJDK 17 + PostgreSQL 16（PGDG 源）+ Redis 7 + nginx + supervisord**
+**Alpine 两级镜像：base（OpenJDK 17 + PostgreSQL + nginx）+ 应用层（`supervise.sh` 守护，无 Redis/supervisor/bash/gettext/tzdata）**
 
 ---
 
@@ -346,7 +346,7 @@ Authorization: Bearer chub_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 - Token 创建时完整展示一次；库中只存 `hex(sha256(token))` 与前缀
-- Redis 缓存校验结果（TTL 5 分钟），吊销时同步删除缓存
+- 进程内缓存校验结果（TTL 5 分钟），吊销时同步删除缓存
 - Token 作用域 = 所属应用（含其订阅的共享模块）；**全环境通用**（不做按环境隔离）
 - 401：缺失/无效/过期/吊销；403：模块不属于该应用；429：限流
 
@@ -412,7 +412,7 @@ GET /api/v1/pipeline/files/{moduleId}/{fileId}?version=3
 | ---- | ------------------ | -------------------- | ----- |
 | GET  | `/auth/me`         | 当前用户信息               | 登录    |
 | PUT  | `/auth/me`         | 改昵称（仅 nickname）      | 登录    |
-| POST | `/auth/logout`     | 清 Cookie + Redis 黑名单 | 登录    |
+| POST | `/auth/logout`     | 清 Cookie + 黑名单 | 登录    |
 | GET  | `/users?keyword=`  | 用户列表                 | 系统管理员 |
 | PUT  | `/users/{id}/role` | 设全局角色 `{role}`       | 系统管理员 |
 | GET  | `/users/options`   | 成员选择器用（id/姓名/邮箱/头像）  | 登录    |
@@ -743,11 +743,14 @@ fcloud-ci-hub/
 │       ├── db/migration/V1__init.sql
 │       └── static/              # 前端构建产物（仅 -PwithFrontend 时拷入）
 ├── frontend/                    # 前端工程（Vue3 + Vite + TS）
-├── deploy/
-│   ├── Dockerfile               # 单镜像（多阶段）
-│   ├── supervisord.conf
-│   ├── nginx.conf.template
-│   └── entrypoint.sh
+├── .ci/                         # 构建与部署（镜像、进程管理、本地依赖）
+│   ├── base.Dockerfile          # 运行时底座：Node20 + JDK17 + nginx + PostgreSQL
+│   ├── Dockerfile               # 应用镜像（基于 base，补 supervisor/redis/产物）
+│   ├── supervisord.conf         # 进程定义：PG → Redis → nginx → app
+│   ├── nginx.conf.template      # server 块模板（entrypoint 渲染）
+│   ├── entrypoint.sh            # initdb / 建库建用户 / 渲染 nginx 配置
+│   ├── build.sh                 # base 与应用镜像的构建脚本
+│   └── docker-compose.dev.yml   # 本地 PG + Redis
 ├── docs/
 └── README.md
 ```
@@ -756,11 +759,11 @@ fcloud-ci-hub/
 
 ```
 fcloud-ci-hub:latest
-├── supervisord（PID 1）
-│   ├── [30] nginx          :8080  对外唯一端口，静态资源 + 反代 /api /oauth /oauth2 /actuator
-│   ├── [20] postgresql 16  :5432  只听 127.0.0.1，数据 /data/config-hub/pg
-│   ├── [21] redis 7        :6379  只听 127.0.0.1，appendonly no（纯缓存）
-│   └── [40] java -jar app  :8081  内部端口，Spring Boot（Flyway 自动迁移）
+├── supervise.sh（PID 1，POSIX sh）
+│   ├── nginx               :8080  对外唯一端口，静态资源 + 反代 /api /oauth /oauth2 /actuator
+│   ├── postgresql 16       :5432  只听 127.0.0.1，数据 /data/config-hub/pg
+│   └── java -jar app       :8081  内部端口，Spring Boot（Flyway 自动迁移）
+└── 缓存：进程内 LocalCache（无 redis 进程）
 └── /data/config-hub（PVC 挂载点）
     ├── pg/            PostgreSQL 数据
     ├── storage/       模块文件（§2.4 路径规范）
@@ -768,11 +771,11 @@ fcloud-ci-hub:latest
     └── master.key     加密主密钥（未提供环境变量时自动生成）
 ```
 
-- 启动顺序由 supervisord `priority` + `entrypoint.sh` 等待逻辑保证：PG 就绪（`pg_isready`）→ Redis → App；App 内部 Flyway 迁移
+- 启动顺序由 `supervise.sh` + `entrypoint.sh` 保证：PG 就绪（`pg_isready`）→ nginx → App；App 内部 Flyway 迁移
 - PG 首次启动自动 `initdb`、建库建用户（entrypoint 脚本判断 `/data/config-hub/pg/PG_VERSION` 是否存在）
 - nginx 配置由模板渲染（上游端口取 `FCLOUD_SERVER_PORT`，容器内默认 8081）；SPA fallback `try_files $uri $uri/ /index.html`
-- 健康检查：`/actuator/health/liveness`、`/actuator/health/readiness`（含 DB/Redis）
-- 时区：容器 `Asia/Shanghai` 展示；存储 UTC
+- 健康检查：`/actuator/health/liveness`、`/actuator/health/readiness`（含 DB）
+- 时区：容器 OS 层跑 UTC（不装 tzdata）；JVM 用 `-Duser.timezone=Asia/Shanghai` 展示，存储 UTC
 
 ### 11.3 环境变量
 
@@ -784,7 +787,6 @@ fcloud-ci-hub:latest
 | `FCLOUD_JWT_SECRET`                      |  ✓  | —                                     | ≥32 字符          |
 | `FCLOUD_MASTER_KEY`                      |     | 自动生成                                  | Base64 32 字节    |
 | `FCLOUD_DB_NAME` / `_USER` / `_PASSWORD` |     | `fcloud_ci_hub` / `fcloud` / `fcloud` | 内置 PG           |
-| `FCLOUD_REDIS_PASSWORD`                  |     | 空                                     | 内置 Redis        |
 | `FCLOUD_SERVER_PORT`                     |     | `8081`（容器内）                           | Spring Boot 端口  |
 | `FCLOUD_STORAGE_ROOT`                    |     | `/data/config-hub/storage`            | 文件根目录           |
 | `FCLOUD_BACKUP_DIR` / `_RETAIN`          |     | `/data/config-hub/backups` / `3`      | 备份目录/保留份数       |

@@ -270,7 +270,7 @@ http.addFilterBefore(mcpAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
 配套改动：
 - 路由 `tokens` 去掉 `adminOnly`，侧边栏从「系统」组移到「配置」组（Token 是个人资产，不是管理员特权）；
-- `deploy/nginx.conf.template` 新增 `location = /mcp` 精确匹配并关缓冲，否则请求会落到 SPA fallback 拿到 index.html。
+- `.ci/nginx.conf.template` 新增 `location = /mcp` 精确匹配并关缓冲，否则请求会落到 SPA fallback 拿到 index.html。
 
 接口 3 个：`GET/POST /api/console/pat`、`DELETE /api/console/pat/{id}`。均只作用于当前登录用户——管理员也看不到别人的令牌。
 
@@ -638,7 +638,7 @@ backend/src/main/java/ci/fcloud/hub/module/VariableImportService.java
 - `PipelineService`：`buildConfig` 拆出无鉴权重载 + `revealSecrets` 参数；`requireApplication` / `resolveModuleForApp` / `ensureBoundToEnv` 改 public
 - `VariableController#importDotenv`：改为调用 `VariableImportService`，消除两套导入逻辑
 - `FcloudProperties` + `application.yml`：新增 `fcloud.mcp.*`
-- 前端 `Tokens.vue` / `router` / `AppLayout` / `deploy/nginx.conf.template`：双 Tab、路由权限、`/mcp` 反代
+- 前端 `Tokens.vue` / `router` / `AppLayout` / `.ci/nginx.conf.template`：双 Tab、路由权限、`/mcp` 反代
 
 ### 11.2 与设计的偏差（都是收紧，不是放宽）
 

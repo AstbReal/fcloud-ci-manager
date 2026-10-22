@@ -71,7 +71,7 @@ public class JwtService {
         return claims.getId();
     }
 
-    /** 剩余有效期（秒），用于 Redis 黑名单 TTL（§6.2）。 */
+    /** 剩余有效期（秒），用于注销黑名单 TTL（§6.2）。 */
     public long remainingSeconds(Claims claims) {
         Instant exp = claims.getExpiration().toInstant();
         long s = Duration.between(Instant.now(), exp).getSeconds();

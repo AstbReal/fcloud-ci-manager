@@ -10,6 +10,7 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import ci.fcloud.hub.common.LocalCache;
 import ci.fcloud.hub.common.CurrentUser;
 import ci.fcloud.hub.config.FcloudProperties;
 import ci.fcloud.hub.pat.PatService;
@@ -18,7 +19,6 @@ import ci.fcloud.hub.token.ApiTokenService;
 import ci.fcloud.hub.user.GlobalRole;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
@@ -53,7 +53,7 @@ public class McpAuthFilter extends OncePerRequestFilter {
     private final ApiTokenService apiTokenService;
     private final McpSettingService mcpSettings;
     private final PatService patService;
-    private final StringRedisTemplate redis;
+    private final LocalCache cache;
     private final ObjectMapper objectMapper;
     private final FcloudProperties props;
 
@@ -142,11 +142,8 @@ public class McpAuthFilter extends OncePerRequestFilter {
         }
         long minute = System.currentTimeMillis() / 60000L;
         String key = RATE_PREFIX + keyPart + ":" + minute;
-        Long n = redis.opsForValue().increment(key);
-        if (n != null && n == 1L) {
-            redis.expire(key, Duration.ofSeconds(120));
-        }
-        return n == null || n <= perMinute;
+        long n = cache.increment(key, Duration.ofSeconds(120));
+        return n <= perMinute;
     }
 
     private void unauthorized(HttpServletResponse response, String message) throws IOException {

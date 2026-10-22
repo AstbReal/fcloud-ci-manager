@@ -53,7 +53,7 @@ public class PatController {
     }
 
     /**
-     * 吊销：立即失效（Redis 缓存同步删除）。
+     * 吊销：立即失效（本地缓存同步删除）。
      */
     @DeleteMapping("/{id}")
     public ApiResponse<Void> revoke(@PathVariable Long id) {

@@ -1,18 +1,19 @@
 package ci.fcloud.hub.auth;
 
 import ci.fcloud.hub.common.CurrentUser;
+import ci.fcloud.hub.common.LocalCache;
 import ci.fcloud.hub.user.GlobalRole;
 import ci.fcloud.hub.user.User;
 import ci.fcloud.hub.user.UserService;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 
 /**
- * §6.2 注销：Redis 黑名单 key=jwt:blacklist:{jti}，TTL=剩余有效期。
+ * §6.2 注销：黑名单 key=jwt:blacklist:{jti}，TTL=剩余有效期。
+ * 存在进程内（LocalCache），重启即失效——见 LocalCache 的说明。
  */
 @Service
 @RequiredArgsConstructor
@@ -20,7 +21,7 @@ public class TokenBlacklistService {
 
     private static final String PREFIX = "jwt:blacklist:";
 
-    private final StringRedisTemplate redis;
+    private final LocalCache cache;
     private final JwtService jwtService;
     private final UserService userService;
 
@@ -28,14 +29,14 @@ public class TokenBlacklistService {
         if (jti == null || ttlSeconds <= 0) {
             return;
         }
-        redis.opsForValue().set(PREFIX + jti, "1", Duration.ofSeconds(ttlSeconds));
+        cache.set(PREFIX + jti, "1", Duration.ofSeconds(ttlSeconds));
     }
 
     public boolean isBlacklisted(String jti) {
         if (jti == null) {
             return false;
         }
-        return Boolean.TRUE.equals(redis.hasKey(PREFIX + jti));
+        return cache.get(PREFIX + jti) != null;
     }
 
     /**

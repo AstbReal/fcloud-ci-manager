@@ -7,15 +7,14 @@
 ## 1. 启动依赖容器（WSL）
 
 ```bash
-# PG 16 + Redis 7（WSL 中的 Docker，端口映射到 Windows 127.0.0.1）
-wsl -e bash -c "cd /mnt/d/code/fcloud-ci-hub && docker compose -f deploy/docker-compose.dev.yml up -d"
+# PG 16（WSL 中的 Docker，端口映射到 Windows 127.0.0.1）；Redis 已移除（D26）
+wsl -e bash -c "cd /mnt/d/code/fcloud-ci-hub && docker compose -f .ci/docker-compose.dev.yml up -d"
 
 # GitLab OAuth 模拟服务（授权码流程，支持一键登录 force_user）
-wsl -e bash -c "cd /mnt/d/code/fcloud-ci-hub/deploy/gitlab-lite && docker compose up -d --build gitlab-lite"
+wsl -e bash -c "cd /mnt/d/code/fcloud-ci-hub/.ci/gitlab-lite && docker compose up -d --build gitlab-lite"
 ```
 
 - PG：`127.0.0.1:5432`（库 `fcloud_ci_hub`，用户/密码 `fcloud/fcloud`）
-- Redis：`127.0.0.1:6379`
 - GitLab-lite：`127.0.0.1:8929`（内置用户 root / alice / bob / noemail）
 
 ## 2. 启动后端（Windows）
@@ -54,7 +53,7 @@ env -u SERVER__PORT FCLOUD_JWT_SECRET=0123456789abcdef0123456789abcdef0123456789
    Spring Boot 宽松绑定会把它当成 `server.port`（优先级高于 application.yml），
    导致端口随机且冲突。启动命令必须 `env -u SERVER__PORT`。
 2. **WSL 休眠会停掉容器**（exit 255）：compose 已加 `restart: unless-stopped`，
-   但若容器已退出，`docker start fcloud-dev-pg fcloud-dev-redis fcloud-gitlab-lite` 即可。
+   但若容器已退出，`docker start fcloud-dev-pg fcloud-gitlab-lite` 即可。
 3. **`gradlew bootRun` 不可用**（Gradle daemon 拿不到注入的环境变量，
    同上一条 SERVER__PORT 问题），统一用 `java -jar` 方式启动。
 4. **curl `-b cookies.txt` 不发送 HttpOnly cookie**：脚本测试时用
@@ -107,6 +106,6 @@ pnpm dev --host 127.0.0.1 --port 5173
 ## 6. 停止
 
 ```bash
-wsl -e bash -c "docker stop fcloud-dev-pg fcloud-dev-redis fcloud-gitlab-lite"
+wsl -e bash -c "docker stop fcloud-dev-pg fcloud-gitlab-lite"
 # 后端：结束 java 进程
 ```

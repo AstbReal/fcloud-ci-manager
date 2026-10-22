@@ -71,7 +71,7 @@ public class OAuth2LoginSuccessHandler implements AuthenticationSuccessHandler {
         // SameSite=Lax 是 §6.2 规定的正确生产配置（HTTPS 同域）。
         // 本地开发若用不同端口跑 GitLab 与主程序，会因 Chrome 的
         // "site for cookies" 机制导致登录后 XHR 不带 cookie（见 README D26），
-        // 因此本地联调请把 GitLab 反代到主程序同域（见 deploy/gitlab-lite）。
+        // 因此本地联调请把 GitLab 反代到主程序同域（见 .ci/gitlab-lite）。
         org.springframework.http.ResponseCookie cookie =
                 org.springframework.http.ResponseCookie.from(
                         JwtCookieAuthenticationFilter.COOKIE_NAME, token)

@@ -5,7 +5,7 @@ build/
 .gradle/
 frontend/node_modules/
 frontend/dist/
-deploy/frontend-dist/
+.ci/frontend-dist/
 
 # 本地运行时数据
 .dsh-tmp/

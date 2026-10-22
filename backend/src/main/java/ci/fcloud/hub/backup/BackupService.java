@@ -853,7 +853,7 @@ public class BackupService {
         // 文件二进制解包到 storage
         int filesRestored = extractFileBinaries(tmp);
 
-        // §9.2 恢复后清理 Redis 中 Token 缓存（流水线 Token 与 PAT 各一套前缀）
+        // §9.2 恢复后清理 Token 缓存（流水线 Token 与 PAT 各一套前缀）
         tokenService.clearCache();
         patService.clearCache();
 

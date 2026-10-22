@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import ci.fcloud.hub.common.BizException;
+import ci.fcloud.hub.common.LocalCache;
 import ci.fcloud.hub.common.CurrentUser;
 import ci.fcloud.hub.common.SecurityUtils;
 import ci.fcloud.hub.user.GlobalRole;
@@ -21,14 +22,13 @@ import ci.fcloud.hub.user.User;
 import ci.fcloud.hub.user.UserMapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 /**
  * MCP 个人访问令牌的签发与校验。
  *
  * <p>与 {@link ci.fcloud.hub.token.ApiTokenService} 结构同构（只存 SHA-256 +
- * Redis 缓存 5 分钟 + 吊销删缓存），但多两件事：绑定用户、带 scope。</p>
+ * 本地缓存 5 分钟 + 吊销删缓存），但多两件事：绑定用户、带 scope。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -46,7 +46,7 @@ public class PatService extends ServiceImpl<PatMapper, Pat> {
     private static final String CACHE_PREFIX = "chub:pat:";
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);
 
-    private final StringRedisTemplate redis;
+    private final LocalCache cache;
     private final UserMapper userMapper;
     private final SecureRandom random = new SecureRandom();
 
@@ -79,10 +79,7 @@ public class PatService extends ServiceImpl<PatMapper, Pat> {
      * 不清会让旧 token 在 TTL 内继续解析出主体。
      */
     public void clearCache() {
-        var keys = redis.keys(CACHE_PREFIX + "*");
-        if (keys != null && !keys.isEmpty()) {
-            redis.delete(keys);
-        }
+        cache.deleteByPrefix(CACHE_PREFIX);
     }
 
     /**
@@ -99,7 +96,7 @@ public class PatService extends ServiceImpl<PatMapper, Pat> {
     }
 
     /**
-     * 吊销。只能吊销自己的令牌；同时清 Redis 缓存。
+     * 吊销。只能吊销自己的令牌；同时清本地缓存。
      */
     public void revoke(Long id) {
         Pat p = getById(id);
@@ -111,7 +108,7 @@ public class PatService extends ServiceImpl<PatMapper, Pat> {
         }
         p.setRevoked(true);
         updateById(p);
-        redis.delete(CACHE_PREFIX + p.getTokenHash());
+        cache.delete(CACHE_PREFIX + p.getTokenHash());
     }
 
     /**
@@ -123,12 +120,12 @@ public class PatService extends ServiceImpl<PatMapper, Pat> {
         }
         String hash = sha256(plain);
 
-        String cached = redis.opsForValue().get(CACHE_PREFIX + hash);
+        String cached = cache.get(CACHE_PREFIX + hash);
         Pat p;
         if (cached != null) {
             p = getById(Long.parseLong(cached.trim()));
             if (p == null || Boolean.TRUE.equals(p.getRevoked())) {
-                redis.delete(CACHE_PREFIX + hash);
+                cache.delete(CACHE_PREFIX + hash);
                 return Optional.empty();
             }
         } else {
@@ -142,7 +139,7 @@ public class PatService extends ServiceImpl<PatMapper, Pat> {
             if (p.getExpiresAt() != null && p.getExpiresAt().isBefore(Instant.now())) {
                 return Optional.empty();
             }
-            redis.opsForValue().set(CACHE_PREFIX + hash, String.valueOf(p.getId()), CACHE_TTL);
+            cache.set(CACHE_PREFIX + hash, String.valueOf(p.getId()), CACHE_TTL);
         }
 
         User u = userMapper.selectById(p.getUserId());

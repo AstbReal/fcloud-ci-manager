@@ -57,7 +57,7 @@ public class AuthController {
     }
 
     /**
-     * §6.2 注销：清 Cookie + Redis 黑名单（TTL=剩余有效期）。
+     * §6.2 注销：清 Cookie + 黑名单（进程内，TTL=剩余有效期）。
      */
     @PostMapping("/logout")
     public ApiResponse<Void> logout(HttpServletRequest request, HttpServletResponse response) {

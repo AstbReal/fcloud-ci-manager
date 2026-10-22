@@ -1,0 +1,11 @@
+# 构建上下文瘦身：镜像只需要 backend 的 jar 与 .ci/frontend-dist
+.git
+.idea
+.workbuddy
+.local-data
+.dsh-tmp
+.design-system
+.ui-review
+frontend/node_modules
+frontend/dist
+design

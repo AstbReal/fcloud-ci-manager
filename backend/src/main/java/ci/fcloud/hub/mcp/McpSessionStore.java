@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
  * MCP 会话存储。
  *
  * <p>spec §14 明确单副本部署，因此内存 Map 足够；将来要多副本，
- * 把这一个类换成 Redis 实现即可，接口不变。</p>
+ * 换成集中式缓存实现即可，接口不变。</p>
  */
 @Component
 public class McpSessionStore {

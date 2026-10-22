@@ -1,10 +1,10 @@
 package ci.fcloud.hub.token;
 
 import ci.fcloud.hub.common.BizException;
+import ci.fcloud.hub.common.LocalCache;
 import ci.fcloud.hub.common.SecurityUtils;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -20,7 +20,7 @@ import java.util.Optional;
  * §4.1 流水线 API Token。
  *
  * - Token 创建时完整展示一次；库中只存 hex(sha256(token)) 与前缀
- * - Redis 缓存校验结果（TTL 5 分钟），吊销时同步删除缓存
+ * - 本地缓存校验结果（TTL 5 分钟），吊销时同步删除缓存
  * - Token 作用域 = 全局（不区分应用、不区分环境），可访问所有应用
  */
 @Service
@@ -33,7 +33,7 @@ public class ApiTokenService extends ServiceImpl<ApiTokenMapper, ApiToken> {
     private static final String CACHE_PREFIX = "chub:token:";
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);
 
-    private final StringRedisTemplate redis;
+    private final LocalCache cache;
     private final SecureRandom random = new SecureRandom();
 
     /**
@@ -56,7 +56,7 @@ public class ApiTokenService extends ServiceImpl<ApiTokenMapper, ApiToken> {
     }
 
     /**
-     * §4.1 吊销：置 revoked=true，并同步删除 Redis 缓存。
+     * §4.1 吊销：置 revoked=true，并同步删除本地缓存。
      */
     public void revoke(Long id) {
         ApiToken t = getById(id);
@@ -65,7 +65,7 @@ public class ApiTokenService extends ServiceImpl<ApiTokenMapper, ApiToken> {
         }
         t.setRevoked(true);
         updateById(t);
-        redis.delete(CACHE_PREFIX + t.getTokenHash());
+        cache.delete(CACHE_PREFIX + t.getTokenHash());
     }
 
     public List<ApiToken> listAll() {
@@ -82,14 +82,14 @@ public class ApiTokenService extends ServiceImpl<ApiTokenMapper, ApiToken> {
         }
         String hash = sha256(plain);
 
-        // 1) Redis 缓存：value = tokenId
-        String cached = redis.opsForValue().get(CACHE_PREFIX + hash);
+        // 1) 本地缓存：value = tokenId
+        String cached = cache.get(CACHE_PREFIX + hash);
         if (cached != null) {
             ApiToken t = getById(Long.parseLong(cached.trim()));
             if (t != null && !Boolean.TRUE.equals(t.getRevoked())) {
                 return Optional.of(t);
             }
-            redis.delete(CACHE_PREFIX + hash);
+            cache.delete(CACHE_PREFIX + hash);
             return Optional.empty();
         }
 
@@ -104,7 +104,7 @@ public class ApiTokenService extends ServiceImpl<ApiTokenMapper, ApiToken> {
         if (t.getExpiresAt() != null && t.getExpiresAt().isBefore(Instant.now())) {
             return Optional.empty();
         }
-        redis.opsForValue().set(CACHE_PREFIX + hash,
+        cache.set(CACHE_PREFIX + hash,
                 String.valueOf(t.getId()), CACHE_TTL);
         return Optional.of(t);
     }
@@ -118,13 +118,10 @@ public class ApiTokenService extends ServiceImpl<ApiTokenMapper, ApiToken> {
     }
 
     /**
-     * §9.2 恢复后清理 Redis 中 Token 缓存。
+     * §9.2 恢复后清理 Token 缓存。
      */
     public void clearCache() {
-        var keys = redis.keys(CACHE_PREFIX + "*");
-        if (keys != null && !keys.isEmpty()) {
-            redis.delete(keys);
-        }
+        cache.deleteByPrefix(CACHE_PREFIX);
     }
 
     // ---------------- 工具 ----------------

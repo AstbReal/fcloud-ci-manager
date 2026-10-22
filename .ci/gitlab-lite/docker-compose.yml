@@ -2,7 +2,7 @@
 # 本地联调：GitLab Lite（测试用 OAuth2 提供方）+ fcloud-ci-hub
 #
 # 用法：
-#   docker compose -f deploy/gitlab-lite/docker-compose.yml up -d
+#   docker compose -f .ci/gitlab-lite/docker-compose.yml up -d
 #   浏览器打开 http://127.0.0.1:18080 → 自动跳转 GitLab 登录
 #
 # 网络说明：
