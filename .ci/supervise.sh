@@ -77,13 +77,15 @@ trap shutdown TERM INT
 
 # ---------------------------------------------------------------------------
 # 1. PostgreSQL
+#
+#    PG 拒绝以 root 运行，必须切到 postgres，用 Alpine 自带的 busybox su。
+#    外层的 exec 让 postgres 直接替换中间 shell，pid 文件记录的就是 postgres
+#    本身，INT/TERM 能直达。
 # ---------------------------------------------------------------------------
 log "starting postgresql"
-start_service postgresql /usr/local/bin/postgres \
-    -D /data/config-hub/pg \
-    -c listen_addresses=127.0.0.1 \
-    -c port=5432 \
-    -c unix_socket_directories=/var/run/postgresql
+PG_ARGS="-D /data/config-hub/pg -c listen_addresses=127.0.0.1 -c port=5432 -c unix_socket_directories=/var/run/postgresql"
+start_service postgresql su postgres -s /bin/sh -c \
+    "exec /usr/local/bin/postgres $PG_ARGS"
 
 i=0
 while [ "$i" -lt 60 ]; do
