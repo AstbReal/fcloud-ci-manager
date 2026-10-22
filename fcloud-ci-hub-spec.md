@@ -23,8 +23,8 @@
 | 框架  | **Spring Boot 2.7.17**                                                                                     |
 | 构建  | **Gradle（Groovy DSL）**；⚠️ 必须用 **Gradle 7.5.1**              |
 | ORM | **MyBatis-Plus 3.5.3.2**（`ASSIGN_ID` 雪花主键，BIGINT）                                                          |
-| 数据库 | **PostgreSQL 16**                                                                                          |
-| 迁移  | **Flyway**（⚠️ Boot 2.7 默认 Flyway 8.5.13 不识别 PG16，需显式升级 `flyway-core:9.22.3`）                               |
+| 数据库 | **PostgreSQL 18**（跟随 Alpine `postgresql` 元包；16 亦兼容，见 README D27）                                      |
+| 迁移  | **Flyway**（⚠️ Boot 2.7 默认 Flyway 8.5.13 不识别 PG16+，需显式升级 `flyway-core:9.22.3`）                              |
 | 缓存  | **进程内缓存**（`LocalCache`：TTL + 固定窗口计数；原 Redis 7 已移除，见 README D26）                                      |
 | 认证  | Spring Security + **OAuth2 Client**（GitLab 通用 Provider）+ **JJWT 0.11.5**                                   |
 | 文档  | **springdoc-openapi-ui 1.6.15**（SB2.7 适配版本）                                                                |
@@ -761,7 +761,7 @@ fcloud-ci-hub/
 fcloud-ci-hub:latest
 ├── supervise.sh（PID 1，POSIX sh）
 │   ├── nginx               :8080  对外唯一端口，静态资源 + 反代 /api /oauth /oauth2 /actuator
-│   ├── postgresql 16       :5432  只听 127.0.0.1，数据 /data/config-hub/pg
+│   ├── postgresql 18       :5432  只听 127.0.0.1，数据 /data/config-hub/pg
 │   └── java -jar app       :8081  内部端口，Spring Boot（Flyway 自动迁移）
 └── 缓存：进程内 LocalCache（无 redis 进程）
 └── /data/config-hub（PVC 挂载点）
@@ -858,7 +858,7 @@ fcloud-ci-hub:latest
 | 风险                        | 处理                                                  |
 | ------------------------- | --------------------------------------------------- |
 | Gradle 9 与 Boot 2.7 插件不兼容 | 固定 Gradle 7.5.1（Dockerfile 用 `gradle:7.5.1-jdk17` 构建阶段） |
-| Flyway 8.5.13 不识别 PG16    | 显式 `flyway-core:9.22.3`                             |
+| Flyway 8.5.13 不识别 PG16+   | 显式 `flyway-core:9.22.3`                             |
 | 单镜像 PG 数据与容器生命周期绑定        | 必须 PVC；文档写明单副本限制                                    |
 | 主密钥丢失 → 加密变量不可恢复          | 建议生产显式提供 `FCLOUD_MASTER_KEY` 并单独保管                  |
 | GitLab 邮箱为空               | 回退 `username@gitlab域名`                              |
@@ -876,7 +876,7 @@ fcloud-ci-hub:latest
 执行要求：
 1. 按文档 §12 的 M1–M8 顺序推进，每个里程碑完成后可独立验证再进入下一个。
 2. 技术栈锁定：Java 17 + Spring Boot 2.7.17 + Gradle 7.5.1(Groovy) + MyBatis-Plus 3.5.3.2 +
-   PostgreSQL 16 + Redis 7 + Flyway 9.22.3 + Vue3/Vite/TS/Element Plus。
+   PostgreSQL 18 + Flyway 9.22.3 + Vue3/Vite/TS/Element Plus（Redis 已移除，见 D26）。
 3. 严格实现文档 §2.2 的变量解析优先级与 §6.3 的权限矩阵，并为其编写单元测试。
 4. 流水线 API 的三个接口按 §4 的契约实现，任何变量值不得写入日志。
 5. 交付单镜像（§11.2），本地用 docker run 验证 §13 的 12 条验收清单，逐条给出结果。

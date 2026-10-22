@@ -20,8 +20,8 @@
 | 框架 | Spring Boot 2.7.17 |
 | 构建 | Gradle 7.5.1（Groovy DSL，wrapper 已锁定） |
 | ORM | MyBatis-Plus 3.5.3.2（`ASSIGN_ID` 雪花主键，BIGINT） |
-| 数据库 | PostgreSQL 16 |
-| 迁移 | Flyway 9.22.3（Boot 2.7 默认 8.5.13 不识别 PG16，需显式升级） |
+| 数据库 | PostgreSQL 18（Alpine `postgresql` 元包，实测 18.4；16 亦兼容，见 D27） |
+| 迁移 | Flyway 9.22.3（Boot 2.7 默认 8.5.13 不识别 PG16+，需显式升级） |
 | 缓存 | 进程内 `LocalCache`（无外部依赖，见决策 D26） |
 | 认证 | Spring Security + OAuth2 Client（GitLab）+ JJWT 0.11.5 |
 | 文档 | springdoc-openapi-ui 1.6.15 |
@@ -184,7 +184,8 @@ docker compose -f .ci/docker-compose.yml up -d
 
 | # | 决策点 | 采用方案 | 理由 |
 | --- | --- | --- | --- |
-| D1 | `.ci/docker-compose.dev.yml` 的镜像 tag | 只用 `postgres:16-alpine` | 与生产 §11.2 的 PG16 大版本一致；Redis 已移除（D26），不再重复拉取 |
+| D1 | `.ci/docker-compose.dev.yml` 的镜像 tag | 只用 `postgres:16-alpine` | 本地已有的镜像，不额外拉取；生产镜像内跟随 Alpine 走 18（D27），SQL 兼容 |
+| D27 | 生产镜像里的 PG 大版本 | 不钉版本，跟随 Alpine 的 `postgresql` 元包（当前 18.4）；本地开发依赖仍是 `postgres:16-alpine` | 钉 16 需要 Alpine community 仓库、且要重建 base；业务 SQL 只用标准 DDL/DML，18 兼容。风险：Flyway 9.22.3 官方支持到 15，PG18 首次启动需确认迁移成功；跨大版本换数据必须走逻辑备份/恢复，物理数据目录不兼容 |
 | D2 | `fcloud.storage.keep-versions` 等可配项 | 在 `application.yml` 显式暴露 | 文档 §2.4 说"可配置"，但不给默认名；用 `FCLOUD_FILE_KEEP_VERSIONS` 显式化 |
 | D3 | 前端构建产物拷贝 | `bootJar` 依赖 `copyFrontend` 任务 | §11.5 说"构建时拷入"；用 Gradle 任务而非 Dockerfile 单独 COPY，保证 `bootRun` 也能看到 |
 | D4 | 实体基类不启用逻辑删除 | `BaseEntity` 无 `deleted` 字段，`mybatis-plus.global-config.db-config` 不配 `logic-delete-field` | §3 的 schema 没有 `deleted` 列；删除一律真实删除 + 级联（§5.3/§5.4），符合"显式、可审计" |
