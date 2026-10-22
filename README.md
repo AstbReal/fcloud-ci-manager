@@ -61,7 +61,10 @@ fcloud-ci-hub/
 │   ├── nginx.conf.template      # server 块模板（entrypoint 渲染）
 │   ├── entrypoint.sh            # initdb / 建库建用户 / 渲染 nginx 配置
 │   ├── build.sh                 # 构建 base 与应用镜像
-│   └── docker-compose.dev.yml   # 本地 PG
+│   ├── docker-compose.yml       # 单镜像部署（生产形态）
+│   ├── .env.example             # 上述 compose 的环境变量模板
+│   ├── docker-compose.dev.yml   # 本地 PG
+│   └── gitlab-lite/             # 测试用 OAuth2 提供方
 ├── docs/
 └── README.md
 ```
@@ -138,6 +141,21 @@ gitlab-lite 实现的端点（与真实 GitLab 契约一致）：
 
 > 注意：`.ci/gitlab-lite/` 仅用于测试，**非生产**。生产请接真实 GitLab，
 > 按 §11.3 配置 `FCLOUD_GITLAB_BASE_URL` / `_CLIENT_ID` / `_CLIENT_SECRET`。
+
+### 3.5 单镜像部署（compose）
+
+```bash
+bash .ci/build.sh base          # 首次；构建底座（会拉 node:20-alpine）
+bash .ci/build.sh               # 构建应用镜像 fcloud-ci-hub:latest
+cp .ci/.env.example .ci/.env    # 填 GitLab 参数与 FCLOUD_JWT_SECRET
+docker compose -f .ci/docker-compose.yml up -d
+```
+
+- 数据全部在命名卷 `fcloud-data`：PG 数据、模块文件、备份包、`master.key`
+- `down -v` 会连卷一起删（等于清库）；只停服务用 `down` 或 `stop`
+- 健康检查走 `/actuator/health/liveness`，首次启动约 60–90 秒
+- 端口默认 `8080`，改 `.env` 里的 `FCLOUD_HTTP_PORT`
+- 该 compose 只跑一个容器：PG / nginx / JVM 由镜像内 `supervise.sh` 拉起
 
 ---
 

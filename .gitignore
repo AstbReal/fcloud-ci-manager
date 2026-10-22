@@ -6,6 +6,8 @@ build/
 frontend/node_modules/
 frontend/dist/
 .ci/frontend-dist/
+# 单镜像部署的实际环境变量（含 GitLab 密钥与 JWT secret）
+.ci/.env
 
 # 本地运行时数据
 .dsh-tmp/
