@@ -23,14 +23,6 @@ SERVER_PORT="${FCLOUD_SERVER_PORT:-8081}"
 
 log() { echo "[entrypoint] $*"; }
 
-# 库名/用户名会拼进 SQL 与 createdb 参数，只允许安全字符
-case "${DB_USER}" in
-    ''|*[!A-Za-z0-9_]*) log "FATAL: FCLOUD_DB_USER 只允许 [A-Za-z0-9_]"; exit 1 ;;
-esac
-case "${DB_NAME}" in
-    ''|*[!A-Za-z0-9_]*) log "FATAL: FCLOUD_DB_NAME 只允许 [A-Za-z0-9_]"; exit 1 ;;
-esac
-
 mkdir -p "${DATA_ROOT}" "${STORAGE_DIR}" "${BACKUP_DIR}" \
          /var/log/supervisor /var/log/nginx /run/nginx \
          /var/run/postgresql /tmp
@@ -38,10 +30,9 @@ mkdir -p "${DATA_ROOT}" "${STORAGE_DIR}" "${BACKUP_DIR}" \
 # ---------------------------------------------------------------------------
 # 0. PG 可执行文件固定到 /usr/local/bin
 #
-#    Alpine 的版本化 PG 包（postgresql16/17/18）把二进制装在
-#    /usr/libexec/postgresqlNN/，而不是 /usr/bin —— 直接 command -v postgres
-#    会找不到。这里先把可能存在的目录都塞进 PATH，再统一软链到 /usr/local/bin，
-#    supervise.sh 只认 /usr/local/bin 下的稳定名字。
+#    Alpine 的 postgresql16/17/18 包把二进制放在 /usr/libexec/postgresqlNN/，
+#    既不在 /usr/bin 也不在默认 PATH —— 先补进 PATH，下面的 command -v 才找得到。
+#    （老版本放 /usr/bin，走 PATH 默认值即可，这段对它无副作用。）
 # ---------------------------------------------------------------------------
 for pg_dir in /usr/libexec/postgresql* /usr/lib/postgresql*/bin; do
     if [ -d "${pg_dir}" ]; then
@@ -57,24 +48,11 @@ for bin in postgres initdb pg_isready psql createdb pg_ctl; do
     fi
 done
 if [ ! -x /usr/local/bin/postgres ]; then
-    log "FATAL: postgres binary not found (looked in PATH, /usr/libexec/postgresql*, /usr/lib/postgresql*/bin)"
+    log "FATAL: postgres binary not found (PATH / /usr/libexec/postgresql* / /usr/lib/postgresql*/bin)"
     exit 1
 fi
 log "postgres binaries: $(readlink -f /usr/local/bin/postgres 2>/dev/null || echo unknown)"
-
-# ---------------------------------------------------------------------------
-# 0.1 以 postgres 身份执行命令
-#
-#     base 装了 su-exec，直接用。SQL 一律写临时文件后 psql -f，
-#     不把变量拼进 shell 引号，避免转义问题。
-# ---------------------------------------------------------------------------
-AS_PG_TMP=/tmp/fcloud-pg
-mkdir -p "$AS_PG_TMP"
-
-if ! command -v su-exec >/dev/null 2>&1; then
-    log "FATAL: su-exec not found; base image must provide it (apk add su-exec)"
-    exit 1
-fi
+log "PG_VERSION in data dir: $(cat "${PGDATA}/PG_VERSION" 2>/dev/null || echo none)"
 
 # ---------------------------------------------------------------------------
 # 1. PG 数据目录准备（initdb 由本脚本执行）
@@ -94,9 +72,11 @@ if [ ! -f "${PGDATA}/PG_VERSION" ]; then
     chown postgres:postgres "${PGDATA}"
     chmod 700 "${PGDATA}"
     if ! su-exec postgres /usr/local/bin/initdb \
-            -D "${PGDATA}" -E UTF8 --locale=C \
-            --auth-local=trust --auth-host=scram-sha-256 \
-            >/var/log/supervisor/initdb.log 2>&1; then
+            -D "${PGDATA}" \
+            -E UTF8 \
+            --locale=C \
+            --auth-local=trust \
+            --auth-host=scram-sha-256 >/var/log/supervisor/initdb.log 2>&1; then
         log "FATAL: initdb failed, see /var/log/supervisor/initdb.log"
         tail -20 /var/log/supervisor/initdb.log 2>/dev/null || true
         exit 1
@@ -164,34 +144,27 @@ export FCLOUD_MASTER_KEY_FILE="${DATA_ROOT}/master.key"
       sleep 1
   done
 
-  # 密码里的单引号按 SQL 规则转义，写进文件，不经过 shell 引号
-  ESC_PW=$(printf '%s' "${DB_PASSWORD}" | sed "s/'/''/g")
+  psql_super() {
+      su-exec postgres /usr/local/bin/psql -h /var/run/postgresql -U postgres "$@"
+  }
 
-  printf "SELECT 1 FROM pg_roles WHERE rolname='%s';\n" "${DB_USER}" \
-      > "${AS_PG_TMP}/role-check.sql"
-  if ! su-exec postgres /usr/local/bin/psql -h /var/run/postgresql -U postgres -tA \
-        -f "${AS_PG_TMP}/role-check.sql" 2>/dev/null | grep -q 1; then
-      printf "CREATE ROLE %s LOGIN PASSWORD '%s';\n" "${DB_USER}" "${ESC_PW}" \
-          > "${AS_PG_TMP}/role-create.sql"
-      su-exec postgres /usr/local/bin/psql -h /var/run/postgresql -U postgres \
-          -f "${AS_PG_TMP}/role-create.sql" >/dev/null 2>&1 || true
+  if ! psql_super -tAc \
+        "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" 2>/dev/null | grep -q 1; then
+      psql_super -c "CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASSWORD}'" \
+        >/dev/null 2>&1 || true
       log "background: role ${DB_USER} created"
   fi
 
-  printf "SELECT 1 FROM pg_database WHERE datname='%s';\n" "${DB_NAME}" \
-      > "${AS_PG_TMP}/db-check.sql"
-  if ! su-exec postgres /usr/local/bin/psql -h /var/run/postgresql -U postgres -tA \
-        -f "${AS_PG_TMP}/db-check.sql" 2>/dev/null | grep -q 1; then
+  if ! psql_super -tAc \
+        "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" 2>/dev/null | grep -q 1; then
       su-exec postgres /usr/local/bin/createdb -h /var/run/postgresql \
-          -O "${DB_USER}" "${DB_NAME}" >/dev/null 2>&1 || true
+        -O "${DB_USER}" "${DB_NAME}" >/dev/null 2>&1 || true
       log "background: database ${DB_NAME} created"
   fi
 
   # PG15+ public schema 授权
-  printf "GRANT ALL ON SCHEMA public TO %s;\n" "${DB_USER}" \
-      > "${AS_PG_TMP}/grant.sql"
-  su-exec postgres /usr/local/bin/psql -h /var/run/postgresql -U postgres \
-      -d "${DB_NAME}" -f "${AS_PG_TMP}/grant.sql" >/dev/null 2>&1 || true
+  psql_super -d "${DB_NAME}" -c \
+      "GRANT ALL ON SCHEMA public TO ${DB_USER}" >/dev/null 2>&1 || true
 
   log "background: database bootstrap complete"
 ) > /var/log/supervisor/bootstrap.log 2>&1 &

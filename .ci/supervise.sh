@@ -77,13 +77,15 @@ trap shutdown TERM INT
 
 # ---------------------------------------------------------------------------
 # 1. PostgreSQL
-#
-#    PG 拒绝以 root 运行，必须切到 postgres。su-exec 直接 exec 成 postgres，
-#    pid 文件记录的就是它，INT/TERM 能直达。
 # ---------------------------------------------------------------------------
 log "starting postgresql"
-PG_ARGS="-D /data/config-hub/pg -c listen_addresses=127.0.0.1 -c port=5432 -c unix_socket_directories=/var/run/postgresql"
-start_service postgresql su-exec postgres /usr/local/bin/postgres $PG_ARGS
+# PG 拒绝以 root 运行，用 su-exec 切到 postgres；su-exec 会 exec 成 postgres，
+# pid 文件记录的就是它本身，INT/TERM 能直达。
+start_service postgresql su-exec postgres /usr/local/bin/postgres \
+    -D /data/config-hub/pg \
+    -c listen_addresses=127.0.0.1 \
+    -c port=5432 \
+    -c unix_socket_directories=/var/run/postgresql
 
 i=0
 while [ "$i" -lt 60 ]; do
