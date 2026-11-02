@@ -28,6 +28,7 @@ Thumbs.db
 # 运行时生成
 /data/
 *.log
+logs/
 
 # 设计系统 / UI 评审工具产物（含 Playwright 依赖与截图，体积大且可重跑）
 .design-system/
@@ -41,3 +42,6 @@ Thumbs.db
 
 # 旧的前端构建产物被拷进了源码目录（build.gradle 实际写到 build/resources/main/static）
 backend/src/main/resources/static/
+
+# 历史项目样例（迁移工具的输入示例，不随仓库走）
+/temp/

@@ -7,6 +7,14 @@ plugins {
 group = 'ci.fcloud.hub'
 version = '1.0.0'
 
+// Jackson 版本整体抬到 2.15.x：镜像安全扫描要求 jackson-dataformat-toml ≥ 2.15.0。
+// 该构件由 Flyway 9.22.3 引入（Flyway 自己要 2.15.2），但 Boot 2.7.17 的 BOM 会把它
+// 压回 2.13.5 —— 所以这不是"版本太旧"，而是被上游 BOM 降级了。
+// 只 force 单个构件会让 core/databind 与 dataformat 版本错配，因此统一抬 BOM。
+// 注意：不要跟着把 snakeyaml 抬到 2.x —— Boot 2.7 的 OriginTrackedYamlLoader 用的是
+// snakeyaml 1.x 的 Yaml 构造器，2.0 删了它，启动阶段直接 NoSuchMethodError。
+ext['jackson-bom.version'] = '2.15.3'
+
 java {
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17

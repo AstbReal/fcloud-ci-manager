@@ -15,6 +15,7 @@ DATA_ROOT="${FCLOUD_DATA_ROOT:-/data/config-hub}"
 PGDATA="${DATA_ROOT}/pg"
 STORAGE_DIR="${FCLOUD_STORAGE_ROOT:-${DATA_ROOT}/storage}"
 BACKUP_DIR="${FCLOUD_BACKUP_DIR:-${DATA_ROOT}/backups}"
+LOG_DIR="${FCLOUD_LOG_DIR:-${DATA_ROOT}/logs}"
 
 DB_NAME="${FCLOUD_DB_NAME:-fcloud_ci_hub}"
 DB_USER="${FCLOUD_DB_USER:-fcloud}"
@@ -23,7 +24,7 @@ SERVER_PORT="${FCLOUD_SERVER_PORT:-8081}"
 
 log() { echo "[entrypoint] $*"; }
 
-mkdir -p "${DATA_ROOT}" "${STORAGE_DIR}" "${BACKUP_DIR}" \
+mkdir -p "${DATA_ROOT}" "${STORAGE_DIR}" "${BACKUP_DIR}" "${LOG_DIR}" \
          /var/log/supervisor /var/log/nginx /run/nginx \
          /var/run/postgresql /tmp
 
@@ -112,6 +113,8 @@ export FCLOUD_DB_PASSWORD="${DB_PASSWORD}"
 export FCLOUD_SERVER_PORT="${SERVER_PORT}"
 export FCLOUD_STORAGE_ROOT="${STORAGE_DIR}"
 export FCLOUD_BACKUP_DIR="${BACKUP_DIR}"
+# 应用日志文件（console 仍照常输出到容器 stdout）。nginx / PG 不落文件。
+export FCLOUD_LOG_FILE="${LOG_DIR}/app.log"
 export FCLOUD_MASTER_KEY_FILE="${DATA_ROOT}/master.key"
 
 # 便于排障时核对实际生效的配置
@@ -124,6 +127,7 @@ export FCLOUD_MASTER_KEY_FILE="${DATA_ROOT}/master.key"
   echo "FCLOUD_SERVER_PORT=${FCLOUD_SERVER_PORT}"
   echo "FCLOUD_STORAGE_ROOT=${FCLOUD_STORAGE_ROOT}"
   echo "FCLOUD_BACKUP_DIR=${FCLOUD_BACKUP_DIR}"
+  echo "FCLOUD_LOG_FILE=${FCLOUD_LOG_FILE}"
   echo "FCLOUD_MASTER_KEY_FILE=${FCLOUD_MASTER_KEY_FILE}"
 } > "${DATA_ROOT}/runtime-env.txt" 2>/dev/null || true
 
@@ -167,7 +171,10 @@ export FCLOUD_MASTER_KEY_FILE="${DATA_ROOT}/master.key"
       "GRANT ALL ON SCHEMA public TO ${DB_USER}" >/dev/null 2>&1 || true
 
   log "background: database bootstrap complete"
-) > /var/log/supervisor/bootstrap.log 2>&1 &
+) &
+
+# 注：这里不重定向到文件 —— 建库过程要能在 `docker logs` 里看到。
+#     只有 initdb 的输出仍落 /var/log/supervisor/initdb.log（失败时 tail）。
 
 log "preparation done; handing over to supervise.sh"
 exec "$@"

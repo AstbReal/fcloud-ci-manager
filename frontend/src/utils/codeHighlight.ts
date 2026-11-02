@@ -268,3 +268,17 @@ export function isSensitive(fileKey: string): boolean {
   return /\.(key|pem|p12|pfx|crt|cer|jks|keystore|env)$/i.test(fileKey)
     || /(secret|password|passwd|private)/i.test(fileKey)
 }
+
+/**
+ * 去掉整行注释（`#` 开头，允许前导空白）。
+ *
+ * 只用于「复制/导出生成内容」：页面上保留注释方便阅读，粘到终端或 .env 里
+ * 就是噪音。不处理行内注释——那需要按语言解析引号，风险大于收益。
+ */
+export function stripCommentLines(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .join('\n')
+    .replace(/\n+$/, '')
+}

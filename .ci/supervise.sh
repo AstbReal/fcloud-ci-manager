@@ -4,14 +4,20 @@
 #
 # 负责：
 #   1. 按顺序拉起 PostgreSQL → nginx → Spring Boot
-#   2. 任一进程退出后自动重启（2 秒间隔），日志落 /var/log/supervisor/*.log
-#   3. 收到 TERM/INT 时先停 app，再停 nginx，最后给 PG 发 INT 做快速关闭
+#   2. 任一进程退出后自动重启（2 秒间隔）
+#   3. 子进程直连容器 stdout/stderr，`docker logs` / `kubectl logs` 可见全部输出
+#   4. 收到 TERM/INT 时先停 app，再停 nginx，最后给 PG 发 INT 做快速关闭
 #
-# 与 supervisor 的差异：没有 Web UI / supervisorctl；状态看日志与 pid 文件。
+# 与 supervisor 的差异：没有 Web UI / supervisorctl；状态看 stdout 与 pid 文件。
 # 用法：/app/supervise.sh（作为容器的 PID 1）
+#
+# ⚠️ 不要给子进程加 `>>文件 2>&1`：一旦 fd1/fd2 指向文件，该进程就与容器的
+#    日志管道彻底断开，`docker logs` 只会剩下本脚本自己打的 [supervise] 行。
+#    日志落盘与轮转交给 docker 的 json-file driver（compose 已配 20m × 3）。
 # ============================================================================
 set -u
 
+# LOG_DIR 只给 entrypoint 的 initdb.log 用，运行期日志不再落文件
 LOG_DIR=/var/log/supervisor
 RUN_DIR=/var/run
 FLAG="${RUN_DIR}/fcloud-shutting-down"
@@ -23,20 +29,23 @@ rm -f "$FLAG" "${RUN_DIR}"/fcloud-*.pid
 log() { echo "[supervise] $*"; }
 
 # 在独立子 shell 里守护一个进程；用文件标记跨进程传递退出信号
+#
+# 子进程的 fd1/fd2 直接继承本脚本（即容器的 stdout/stderr），不重定向到文件：
+# 这是 `docker logs` 能看到 PG / nginx / JVM 输出的前提。
 start_service() {
     name=$1
     shift
     (
         while [ ! -f "$FLAG" ]; do
-            "$@" >>"${LOG_DIR}/${name}.log" 2>&1 &
+            "$@" &
             child=$!
             echo "$child" >"${RUN_DIR}/fcloud-${name}.pid"
+            log "${name} started (pid=${child})"
             wait "$child"
             code=$?
             rm -f "${RUN_DIR}/fcloud-${name}.pid"
             [ -f "$FLAG" ] && break
-            echo "[supervise] ${name} exited (code=${code}), restarting in ${RESTART_DELAY}s" \
-                >>"${LOG_DIR}/${name}.log"
+            log "${name} exited (code=${code}), restarting in ${RESTART_DELAY}s"
             sleep "$RESTART_DELAY"
         done
     ) &

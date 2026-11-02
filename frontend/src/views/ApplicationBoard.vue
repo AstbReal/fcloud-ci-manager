@@ -74,12 +74,53 @@
         </section>
       </aside>
 
-      <!-- 右栏：图例 + 应用卡片墙 -->
+      <!-- 右栏：搜索 + 筛选 + 应用卡片墙 -->
       <div class="board-main">
         <div class="board-bar">
-          <span class="lg"><i class="dot red" />缺必填变量</span>
-          <span class="lg"><i class="dot amber" />模板待同步</span>
-          <span class="lg-note">无标记 = 正常</span>
+          <label class="search">
+            <ProtoIcon name="search" :size="14" class="s-ic" />
+            <input
+              ref="searchRef"
+              v-model="q"
+              class="s-in"
+              type="text"
+              aria-label="搜索应用或模块"
+              placeholder="搜索应用或模块 · 名称 / code"
+              autocomplete="off"
+              spellcheck="false"
+              @keydown="onSearchKeydown"
+            />
+            <button v-if="q" class="s-clear" title="清空（Esc）" @click="q = ''">
+              <ProtoIcon name="x" :size="12" />
+            </button>
+            <kbd v-else class="s-kbd" title="按 / 快速聚焦">/</kbd>
+          </label>
+
+          <div class="segs">
+            <button class="seg" :class="{ on: health === 'all' }" @click="health = 'all'">
+              全部<span class="n">{{ board.applications.length }}</span>
+            </button>
+            <button
+              class="seg"
+              :class="{ on: health === 'missing' }"
+              title="有必填变量缺值的应用（变量 × 环境）"
+              @click="health = 'missing'"
+            >
+              <i class="dot red" />缺必填<span class="n">{{ missingApps }}</span>
+            </button>
+            <button
+              class="seg"
+              :class="{ on: health === 'pending' }"
+              title="关联模板有未同步变更的应用"
+              @click="health = 'pending'"
+            >
+              <i class="dot amber" />待同步<span class="n">{{ pendingApps }}</span>
+            </button>
+          </div>
+
+          <span v-if="filtered" class="bar-result">
+            {{ cards.length }} / {{ board.applications.length }}
+          </span>
           <span class="bar-time">检查于 {{ checkedAt }}</span>
         </div>
 
@@ -93,21 +134,32 @@
           </el-button>
         </div>
 
+        <div v-else-if="!cards.length" class="fc-card fc-empty search-empty">
+          <el-icon :size="40" color="#d1d5db"><Search /></el-icon>
+          <p style="margin-top: 12px">
+            <template v-if="q.trim()">没有匹配「{{ q.trim() }}」的应用或模块</template>
+            <template v-else>当前筛选下没有问题应用</template>
+          </p>
+          <div class="empty-acts">
+            <button class="btn btn-sm" @click="resetFilters">清空搜索与筛选</button>
+          </div>
+        </div>
+
         <div v-else class="apps">
-          <article v-for="app in board.applications" :key="app.id" class="appcard fc-card">
+          <article v-for="card in visibleCards" :key="card.app.id" class="appcard fc-card">
             <div class="appcard-h">
-              <div class="app-ic">{{ letterOf(app) }}</div>
+              <div class="app-ic">{{ card.letter }}</div>
               <div class="app-head-main">
                 <div class="app-t">
-                  <span>{{ app.name }}</span>
-                  <HealthDot variant="badge" :health="cardHealth(app)" />
+                  <span>{{ card.app.name }}</span>
+                  <HealthDot variant="badge" :health="card.health" />
                 </div>
-                <div class="app-c mono">{{ app.code }}</div>
+                <div class="app-c mono">{{ card.app.code }}</div>
               </div>
               <el-dropdown
                 v-if="isAdmin"
                 trigger="click"
-                @command="(c: string) => onAppCommand(c, app)"
+                @command="(c: string) => onAppCommand(c, card.app)"
               >
                 <button class="app-more" title="更多操作">
                   <el-icon :size="15"><MoreFilled /></el-icon>
@@ -115,7 +167,7 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="edit">编辑应用</el-dropdown-item>
-                    <el-dropdown-item command="copy" :disabled="!app.privateModules.length">
+                    <el-dropdown-item command="copy" :disabled="!card.app.privateModules.length">
                       复制模块到其他应用
                     </el-dropdown-item>
                     <el-dropdown-item command="delete" divided style="color: #dc2626">
@@ -126,16 +178,17 @@
               </el-dropdown>
             </div>
 
-            <p v-if="app.description" class="app-d">{{ app.description }}</p>
+            <p v-if="card.app.description" class="app-d">{{ card.app.description }}</p>
 
             <div class="groups">
-              <div v-for="grp in groupsOf(app)" :key="grp.name" class="group">
+              <div v-for="grp in card.groups" :key="grp.name" class="group">
                 <div class="group-l">{{ grp.name || '未分组' }}</div>
                 <div class="chips">
                   <button
                     v-for="m in grp.modules"
                     :key="m.id"
                     class="chip"
+                    :class="{ 'chip-hit': isHit(m) }"
                     :title="`${m.name} · ${m.code}`"
                     @click="goModule(m)"
                   >
@@ -148,15 +201,16 @@
               <div class="group">
                 <div class="group-l">
                   订阅
-                  <span v-if="app.subscribedModules.length" class="g-count">
-                    {{ app.subscribedModules.length }}
+                  <span v-if="card.app.subscribedModules.length" class="g-count">
+                    {{ card.app.subscribedModules.length }}
                   </span>
                 </div>
                 <div class="chips">
                   <button
-                    v-for="m in app.subscribedModules"
+                    v-for="m in card.app.subscribedModules"
                     :key="'s' + m.id"
                     class="chip chip-sub"
+                    :class="{ 'chip-hit': isHit(m) }"
                     :title="`${m.name} · ${m.code}`"
                     @click="goModule(m)"
                   >
@@ -165,10 +219,10 @@
                   </button>
                   <button
                     class="chip chip-add"
-                    :class="{ on: pickerOpen && pickerApp?.id === app.id }"
-                    :data-sub-anchor="app.id"
+                    :class="{ on: pickerOpen && pickerApp?.id === card.app.id }"
+                    :data-sub-anchor="card.app.id"
                     title="从共享模块库引用一份配置：源模块改动会实时同步到本应用"
-                    @click.stop="openPicker(app, $event)"
+                    @click.stop="openPicker(card.app, $event)"
                   >
                     <el-icon :size="12"><Plus /></el-icon>
                     订阅共享模块
@@ -178,17 +232,23 @@
             </div>
 
             <div class="appcard-f">
-              <span><b>{{ app.privateModules.length }}</b> 私有模块</span>
-              <span><b>{{ app.subscribedModules.length }}</b> 订阅</span>
+              <span><b>{{ card.app.privateModules.length }}</b> 私有模块</span>
+              <span><b>{{ card.app.subscribedModules.length }}</b> 订阅</span>
               <button
                 class="foot-add"
                 title="在当前应用下新建私有模块，只有本应用可见"
-                @click="openCreateModule(app)"
+                @click="openCreateModule(card.app)"
               >
                 + 私有模块
               </button>
             </div>
           </article>
+        </div>
+
+        <div v-if="hiddenCount" class="more-row">
+          <button class="btn" @click="showMore">
+            加载更多<span class="more-n">还有 {{ hiddenCount }} 个</span>
+          </button>
         </div>
       </div>
     </div>
@@ -395,7 +455,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, MoreFilled } from '@element-plus/icons-vue'
@@ -427,6 +487,15 @@ const board = ref<BoardData>({ applications: [], sharedModules: [] })
 const environments = ref<Env[]>([])
 const templateCount = ref(0)
 const checkedAt = ref('—')
+
+/** 首屏卡片数量：应用多时一次性铺满 DOM 是卡顿的主因，先渲染一批 */
+const PAGE_SIZE = 24
+type HealthFilter = 'all' | 'missing' | 'pending'
+
+const q = ref('')
+const health = ref<HealthFilter>('all')
+const renderLimit = ref(PAGE_SIZE)
+const searchRef = ref<HTMLInputElement | null>(null)
 
 const appDrawer = ref(false)
 const sharedDrawer = ref(false)
@@ -481,10 +550,10 @@ const glError = ref('')
 async function loadProjects(keyword: string) {
   glLoading.value = true
   try {
-    const q = (keyword || '').trim()
+    const kw = (keyword || '').trim()
     // 用 fetch 而不是 api.get：配置缺失是预期情况，走内联提示而不是全局 toast
     const res = await fetch(
-      `/api/console/admin/settings/gitlab/projects${q ? `?search=${encodeURIComponent(q)}` : ''}`,
+      `/api/console/admin/settings/gitlab/projects${kw ? `?search=${encodeURIComponent(kw)}` : ''}`,
       { credentials: 'same-origin' }
     )
     const body = await res.json()
@@ -541,6 +610,123 @@ function cardHealth(app: BoardApp): ModuleHealth {
     missingRequired: all.reduce((n, m) => n + (m.health?.missingRequired || 0), 0),
     templatePending: all.some((m) => !!m.health?.templatePending)
   }
+}
+
+interface AppCardVm {
+  app: BoardApp
+  letter: string
+  groups: Array<{ name: string; modules: MiniModule[] }>
+  health: ModuleHealth
+}
+
+/**
+ * 分组与健康度只在看板数据变化时算一次。
+ * 原先在模板里直接调 groupsOf()/cardHealth()，每次重渲染（包括输入搜索的每个
+ * 按键）都要把所有应用的模块重新聚合一遍，应用一多就明显掉帧。
+ */
+const allCards = computed<AppCardVm[]>(() =>
+  board.value.applications.map((app) => ({
+    app,
+    letter: letterOf(app),
+    groups: groupsOf(app),
+    health: cardHealth(app)
+  }))
+)
+
+const needle = computed(() => q.value.trim().toLowerCase())
+
+/** 搜应用名 / code / 描述，也搜它下面的模块名与 code —— 否则「找这个模块在哪个应用」只能靠翻 */
+function matches(card: AppCardVm, n: string) {
+  const { app } = card
+  if (
+    app.name?.toLowerCase().includes(n) ||
+    app.code?.toLowerCase().includes(n) ||
+    app.description?.toLowerCase().includes(n)
+  ) {
+    return true
+  }
+  return [...(app.privateModules || []), ...(app.subscribedModules || [])].some(
+    (m) => m.name?.toLowerCase().includes(n) || m.code?.toLowerCase().includes(n)
+  )
+}
+
+const cards = computed<AppCardVm[]>(() => {
+  const n = needle.value
+  return allCards.value.filter((card) => {
+    if (health.value === 'missing' && card.health.missingRequired === 0) return false
+    if (health.value === 'pending' && !card.health.templatePending) return false
+    return !n || matches(card, n)
+  })
+})
+
+const visibleCards = computed(() => cards.value.slice(0, renderLimit.value))
+const hiddenCount = computed(() => Math.max(0, cards.value.length - visibleCards.value.length))
+const filtered = computed(() => !!needle.value || health.value !== 'all')
+
+const missingApps = computed(
+  () => allCards.value.filter((c) => c.health.missingRequired > 0).length
+)
+const pendingApps = computed(
+  () => allCards.value.filter((c) => c.health.templatePending).length
+)
+
+/** 命中的模块 chip 加一层描边：搜模块时能一眼看到是哪个 */
+const hitModuleIds = computed(() => {
+  const set = new Set<string>()
+  const n = needle.value
+  if (!n) return set
+  for (const card of allCards.value) {
+    for (const m of [...(card.app.privateModules || []), ...(card.app.subscribedModules || [])]) {
+      if (m.name?.toLowerCase().includes(n) || m.code?.toLowerCase().includes(n)) {
+        set.add(String(m.id))
+      }
+    }
+  }
+  return set
+})
+
+function isHit(m: MiniModule) {
+  return hitModuleIds.value.has(String(m.id))
+}
+
+watch([needle, health], () => {
+  renderLimit.value = PAGE_SIZE
+})
+
+function showMore() {
+  renderLimit.value += PAGE_SIZE
+}
+
+function resetFilters() {
+  q.value = ''
+  health.value = 'all'
+}
+
+function onSearchKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return
+  e.preventDefault()
+  if (q.value) q.value = ''
+  else (e.target as HTMLInputElement).blur()
+}
+
+function isTypingTarget(el: EventTarget | null) {
+  const node = el as HTMLElement | null
+  if (!node) return false
+  return (
+    node.tagName === 'INPUT' ||
+    node.tagName === 'TEXTAREA' ||
+    node.tagName === 'SELECT' ||
+    node.isContentEditable
+  )
+}
+
+/** 按 / 聚焦搜索：列表型页面里键盘比鼠标快 */
+function onGlobalKeydown(e: KeyboardEvent) {
+  if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return
+  if (isTypingTarget(e.target)) return
+  e.preventDefault()
+  searchRef.value?.focus()
+  searchRef.value?.select()
 }
 
 function goModule(m: MiniModule) {
@@ -879,7 +1065,12 @@ async function doCopy() {
   }
 }
 
-onMounted(() => load())
+onMounted(() => {
+  void load()
+  window.addEventListener('keydown', onGlobalKeydown)
+})
+
+onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
 </script>
 
 <style scoped>
@@ -1095,6 +1286,9 @@ onMounted(() => load())
 }
 
 .rail-list {
+  /* 共享模块一多就把左栏撑得老长，给个上限自滚动 */
+  max-height: 46vh;
+  overflow: auto;
   padding: 6px;
 }
 
@@ -1146,6 +1340,10 @@ onMounted(() => load())
 .rail-cd {
   font-size: 10.5px;
   color: var(--text-3);
+  /* 描述只留一行：左栏是索引，不是阅读区，换行会把列表撑散 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rail-meta {
@@ -1183,24 +1381,140 @@ onMounted(() => load())
 
 .board-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 12px;
-  font-size: 11.5px;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+/* ---------- 搜索 ---------- */
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 300px;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  transition: 0.14s;
+}
+
+.search:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.s-ic {
+  flex: 0 0 14px;
   color: var(--text-3);
 }
 
-.board-bar .lg {
+.search:focus-within .s-ic {
+  color: var(--primary);
+}
+
+.s-in {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.s-in::placeholder {
+  color: #98a1b0;
+}
+
+.s-clear {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.s-clear:hover {
+  background: var(--border-2);
+  color: var(--text);
+}
+
+.s-kbd {
+  flex: 0 0 auto;
+  min-width: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-3);
+  font: 500 10.5px/15px var(--mono);
+  text-align: center;
+}
+
+/* ---------- 健康度筛选（兼作图例） ---------- */
+.segs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+}
+
+.seg {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: 0.12s;
+}
+
+.seg:hover {
+  color: var(--text);
+}
+
+.seg.on {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.1);
+}
+
+.seg .n {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.seg.on .n {
+  color: var(--text-2);
 }
 
 .board-bar .dot {
   width: 7px;
   height: 7px;
-  border-radius: 99px;
   flex: 0 0 7px;
+  border-radius: 99px;
 }
 
 .dot.red {
@@ -1213,12 +1527,16 @@ onMounted(() => load())
   box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
 }
 
-.lg-note {
-  color: var(--text-3);
+.bar-result {
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .bar-time {
   margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-3);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1371,6 +1689,36 @@ onMounted(() => load())
   color: var(--text-2);
 }
 
+/* 搜索命中的模块：主色浅底 + 实线描边，和普通 chip 区分开 */
+.chip.chip-hit {
+  border-color: var(--primary-100);
+  background: var(--primary-50);
+  color: var(--primary-700);
+}
+
+.chip.chip-hit:hover {
+  border-color: var(--primary-100);
+  background: var(--primary-100);
+}
+
+.search-empty .empty-acts {
+  margin-top: 12px;
+}
+
+.more-row {
+  display: flex;
+  justify-content: center;
+  padding: 18px 0 2px;
+}
+
+.more-n {
+  margin-left: 6px;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
 .chip-add {
   border: 1px dashed var(--border-2);
   background: transparent;
@@ -1424,6 +1772,29 @@ onMounted(() => load())
 
   .rail {
     position: static;
+  }
+
+  .rail-list {
+    max-height: 32vh;
+  }
+}
+
+@media (max-width: 600px) {
+  .search {
+    width: 100%;
+  }
+
+  .segs {
+    width: 100%;
+  }
+
+  .seg {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .bar-time {
+    margin-left: 0;
   }
 }
 </style>

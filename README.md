@@ -156,6 +156,11 @@ docker compose -f .ci/docker-compose.yml up -d
 - 健康检查走 `/actuator/health/liveness`，首次启动约 60–90 秒
 - 端口默认 `8080`，改 `.env` 里的 `FCLOUD_HTTP_PORT`
 - 该 compose 只跑一个容器：PG / nginx / JVM 由镜像内 `supervise.sh` 拉起
+- 日志：PG / nginx / JVM 都写容器 stdout，`docker compose -f .ci/docker-compose.yml logs -f hub`
+  可看全部；轮转由 json-file driver 负责（20m × 3）。应用另写一份日志文件到数据卷
+  `logs/app.log`（Logback 自轮转：单文件 50MB、保留 7 份、总量上限 500MB），路径可用
+  `FCLOUD_LOG_FILE` 覆盖。要只看某一路：`docker logs fcloud-ci-hub 2>&1 | grep -E '^(LOG|FATAL):'`（PG）、
+  `grep '^\[supervise\]'`（监管与重启记录）
 
 ---
 
@@ -171,6 +176,7 @@ docker compose -f .ci/docker-compose.yml up -d
 | `FCLOUD_MASTER_KEY` | | 自动生成 | Base64 32 字节 |
 | `FCLOUD_SERVER_PORT` | | 8081（容器内） | Spring Boot 端口 |
 | `FCLOUD_STORAGE_ROOT` | | /data/config-hub/storage | 文件根目录 |
+| `FCLOUD_LOG_FILE` | | /data/config-hub/logs/app.log | 应用日志文件（console 同时输出） |
 | `FCLOUD_MCP_ENABLED` | | `true` | MCP 端点总开关，关掉后 `/mcp` 返回 404 |
 | `FCLOUD_MCP_WRITE_ENABLED` | | `false` | 写工具是否可见（仍需令牌带 `mcp:write`） |
 | `FCLOUD_MCP_REVEAL_ENABLED` | | `false` | 明文读取工具是否可见（仍需 `mcp:secret` + 管理员） |

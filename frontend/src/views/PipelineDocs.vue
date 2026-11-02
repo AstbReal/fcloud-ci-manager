@@ -85,7 +85,7 @@
         <div class="card-title">1 · 拉取变量（dotenv）</div>
         <div class="head-right">
           <span class="tag tag-plain">GET</span>
-          <button class="icon-btn" title="复制这一段" @click="copy(linesConfig, '第 1 段')">
+          <button class="icon-btn" title="复制这一段（不含注释）" @click="copy(linesConfig, '第 1 段', $event)">
             <ProtoIcon name="copy" :size="14" />
           </button>
         </div>
@@ -103,7 +103,7 @@
         <div class="card-title">2 · 批量下载文件（tar.gz）</div>
         <div class="head-right">
           <span class="tag tag-plain">POST</span>
-          <button class="icon-btn" title="复制这一段" @click="copy(linesArtifacts, '第 2 段')">
+          <button class="icon-btn" title="复制这一段（不含注释）" @click="copy(linesArtifacts, '第 2 段', $event)">
             <ProtoIcon name="copy" :size="14" />
           </button>
         </div>
@@ -121,7 +121,7 @@
         <div class="card-title">3 · 单文件下载</div>
         <div class="head-right">
           <span class="tag tag-plain">GET</span>
-          <button class="icon-btn" title="复制这一段" @click="copy(linesFile, '第 3 段')">
+          <button class="icon-btn" title="复制这一段（不含注释）" @click="copy(linesFile, '第 3 段', $event)">
             <ProtoIcon name="copy" :size="14" />
           </button>
         </div>
@@ -177,6 +177,7 @@ import { api } from '@/api/http'
 import { envApi } from '@/api'
 import FilterSelect from '@/components/FilterSelect.vue'
 import ProtoIcon from '@/components/ProtoIcon.vue'
+import { COPY_FAIL_HINT, copyText, selectTextIn } from '@/utils/clipboard'
 import type { BoardApp, BoardData, MiniModule } from '@/types/board'
 import type { Id } from '@/types/id'
 
@@ -399,28 +400,40 @@ function filesOf(m: CandidateModule): CandidateFile[] {
   return cache.value[`${String(m.id)}:${envId.value}`] || []
 }
 
-function plain(lines: Line[]): string {
-  return lines.map(line => line.map(s => s.t).join('')).join('\n')
+/**
+ * 复制用的纯净版：去掉注释片段，整行只有注释的直接丢掉。
+ * 页面上保留注释是为了看得懂，粘到终端/CI 里就是噪音。
+ */
+function plainCode(lines: Line[]): string {
+  return lines
+    .map(line => line.filter(seg => seg.c !== 'c').map(s => s.t).join(''))
+    .filter(text => text.trim() !== '')
+    .join('\n')
 }
 
-async function copy(lines: Line[], what: string) {
-  try {
-    await navigator.clipboard.writeText(plain(lines))
-    ElMessage.success(`${what}已复制`)
-  } catch {
-    ElMessage.warning('复制失败，请手动选择文本复制')
+async function copy(lines: Line[], what: string, e?: MouseEvent) {
+  if (await copyText(plainCode(lines))) {
+    ElMessage.success(`${what}已复制（不含注释）`)
+    return
   }
+  // 降级：直接把这段代码选中，用户按 Ctrl+C 就行（HTTP 环境下的常见路径）
+  const card = (e?.currentTarget as HTMLElement | null)?.closest('.card')
+  if (selectTextIn(card?.querySelector('pre'))) {
+    ElMessage.warning({ message: '浏览器拒绝写剪贴板，已选中整段文本，按 Ctrl+C 复制', duration: 6000 })
+    return
+  }
+  ElMessage.warning({ message: COPY_FAIL_HINT, duration: 6000 })
 }
 
 async function copyAll() {
   const all = [linesConfig.value, linesArtifacts.value, linesFile.value]
-    .map((lines, i) => `# ${i + 1}. ${['拉取变量（dotenv）', '批量下载文件（tar.gz）', '单文件下载'][i]}\n${plain(lines)}`)
+    .map(lines => plainCode(lines))
+    .filter(Boolean)
     .join('\n\n')
-  try {
-    await navigator.clipboard.writeText(all)
-    ElMessage.success('示例已复制到剪贴板')
-  } catch {
-    ElMessage.warning('复制失败，请手动选择文本复制')
+  if (await copyText(all)) {
+    ElMessage.success('示例已复制（不含注释）')
+  } else {
+    ElMessage.warning({ message: COPY_FAIL_HINT, duration: 6000 })
   }
 }
 

@@ -186,6 +186,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { COPY_FAIL_HINT, copyText, selectTextIn } from '@/utils/clipboard'
 import { api, type PageResult } from '@/api/http'
 import { userApi, type UserItem } from '@/api'
 import ProtoIcon from '@/components/ProtoIcon.vue'
@@ -384,12 +385,16 @@ function openDetail(row: AuditRow) {
 }
 
 async function copyDetail() {
-  try {
-    await navigator.clipboard.writeText(rawDetail.value)
+  const ok = await copyText(rawDetail.value)
+  if (ok) {
     ElMessage.success('详情已复制')
-  } catch {
-    ElMessage.warning('复制失败，请在抽屉里手动选择文本复制')
+    return
   }
+  if (selectTextIn(document.querySelector('.el-drawer .ad-raw, .el-drawer .ad-kv'))) {
+    ElMessage.warning({ message: '浏览器拒绝写剪贴板，已选中详情文本，按 Ctrl+C 复制', duration: 6000 })
+    return
+  }
+  ElMessage.warning({ message: COPY_FAIL_HINT, duration: 6000 })
 }
 
 function fmtFull(v: string) {

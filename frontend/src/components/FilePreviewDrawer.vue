@@ -146,6 +146,7 @@ import { ElMessage } from 'element-plus'
 import ProtoIcon from '@/components/ProtoIcon.vue'
 import { api } from '@/api/http'
 import { diffLines, toBlocks, type DiffBlock, type DiffRow } from '@/utils/lineDiff'
+import { COPY_FAIL_HINT, copyText, selectTextIn } from '@/utils/clipboard'
 import {
   highlightLine,
   isHighlightable,
@@ -363,12 +364,15 @@ async function reveal() {
 }
 
 async function copyAll() {
-  try {
-    await navigator.clipboard.writeText(text.value)
+  if (await copyText(text.value)) {
     ElMessage.success('已复制全文')
-  } catch {
-    ElMessage.warning('复制失败，请手动选择内容')
+    return
   }
+  if (selectTextIn(document.querySelector('.pv-code'))) {
+    ElMessage.warning({ message: '浏览器拒绝写剪贴板，已选中全文，按 Ctrl+C 复制', duration: 6000 })
+    return
+  }
+  ElMessage.warning({ message: COPY_FAIL_HINT, duration: 6000 })
 }
 
 function download() {
@@ -383,11 +387,10 @@ async function copyCurl() {
   if (!props.file) return
   const url = `${location.origin}/api/v1/pipeline/files/${props.file.moduleId}/${props.file.id}?version=${version.value}`
   const cmd = `curl -sS -H "Authorization: Bearer $FCLOUD_TOKEN" \\\n  "${url}" -O -J`
-  try {
-    await navigator.clipboard.writeText(cmd)
+  if (!(await copyText(cmd))) {
+    ElMessage.warning({ message: COPY_FAIL_HINT, duration: 6000 })
+  } else {
     ElMessage.success('已复制 curl 命令')
-  } catch {
-    ElMessage.warning('复制失败')
   }
 }
 

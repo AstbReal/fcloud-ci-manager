@@ -75,9 +75,7 @@ public class FileService extends ServiceImpl<ModuleFileMapper, ModuleFile> {
     public ModuleFile upload(Long moduleId, Long environmentId, String fileKey,
                              MultipartFile multipart, String remark) {
         permissionService.requireCanEdit(moduleId);
-        if (fileKey == null || fileKey.isBlank()) {
-            throw BizException.badRequest("fileKey 不能为空");
-        }
+        fileKey = requireFlatFileKey(fileKey);
         if (multipart == null || multipart.isEmpty()) {
             throw BizException.badRequest("文件内容为空");
         }
@@ -124,9 +122,10 @@ public class FileService extends ServiceImpl<ModuleFileMapper, ModuleFile> {
         // §2.4 路径：{storage.root}/{appCode 或 _shared}/{moduleCode}/{envCode}/v{version}/{fileKey}
         Path dir = Paths.get(props.getStorage().getRoot(), appCode, m.getCode(), envCode,
                 "v" + nextVersion);
-        Path target = dir.resolve(fileKey);
+        Path target = resolveTarget(dir, fileKey);
         try {
-            Files.createDirectories(dir);
+            // fileKey 允许带子路径（历史项目按阶段分目录），父目录要一起建
+            Files.createDirectories(target.getParent());
             try (InputStream in = multipart.getInputStream()) {
                 Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
             }
@@ -155,6 +154,43 @@ public class FileService extends ServiceImpl<ModuleFileMapper, ModuleFile> {
         // §2.4 保留最近 3 个
         pruneOldVersions(file, nextVersion);
         return file;
+    }
+
+    /**
+     * fileKey 只能是文件名，不允许带目录。
+     *
+     * <p>「模块 × 环境」已经是文件唯一维度，再叠一层目录只会让同一份配置出现
+     * 两个 key（`deployment.yaml` 与 `deployment/deployment.yaml`），
+     * 后续谁覆盖谁说不清。真正需要区分就改文件名。</p>
+     */
+    static String requireFlatFileKey(String fileKey) {
+        String key = fileKey == null ? "" : fileKey.trim();
+        if (key.isEmpty()) {
+            throw BizException.badRequest("fileKey 不能为空");
+        }
+        if (key.contains("/") || key.contains("\\")) {
+            throw BizException.badRequest(
+                    "fileKey 只能是文件名，不能带目录：" + fileKey);
+        }
+        if (".".equals(key) || "..".equals(key)) {
+            throw BizException.badRequest("fileKey 不合法：" + fileKey);
+        }
+        return key;
+    }
+
+    /**
+     * fileKey → 目标路径。
+     *
+     * <p>key 已由 {@link #requireFlatFileKey} 限制为扁平文件名，这里仍然做一次
+     * 归一化与越界校验，防止绕过校验的调用把文件写到 storage root 之外。</p>
+     */
+    static Path resolveTarget(Path versionDir, String fileKey) {
+        Path base = versionDir.normalize();
+        Path target = base.resolve(fileKey).normalize();
+        if (target.equals(base) || !target.startsWith(base)) {
+            throw BizException.badRequest("fileKey 不合法：不能为空、不能包含 .. 或指向目录之外");
+        }
+        return target;
     }
 
     /**

@@ -248,6 +248,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { COPY_FAIL_HINT, copyText } from '@/utils/clipboard'
 import ProtoIcon from '@/components/ProtoIcon.vue'
 import { api } from '@/api/http'
 import { useUserStore } from '@/stores/user'
@@ -413,11 +414,10 @@ async function createPat() {
 }
 
 async function copyToken(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
+  if (await copyText(text)) {
     ElMessage.success('已复制')
-  } catch {
-    ElMessage.warning('复制失败，请手动选择文本复制')
+  } else {
+    ElMessage.warning({ message: COPY_FAIL_HINT, duration: 6000 })
   }
 }
 

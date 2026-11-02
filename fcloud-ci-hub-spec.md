@@ -92,6 +92,9 @@ ModuleMember：用户 × 模块 → MODULE_ADMIN / MODULE_OPERATOR
 
 - 存储路径：`{storage.root}/{appCode 或 _shared}/{moduleCode}/{envCode}/v{version}/{fileKey}`
 - 维度：`module + environment + file_key` 唯一；同名 key 上传即生成新版本
+- **fileKey 只能是文件名**：不含 `/`、`\`，不能是 `.` 或 `..`（模块 × 环境已是唯一维度，
+  再叠目录会让同一份配置出现两个 key）；需要区分就改文件名或拆模块。
+  服务端在 `FileService.requireFlatFileKey()` 统一校验，控制台上传 / MCP `upload_file` 同一条路径。
 - **版本保留最近 3 个**，第 4 个上传后自动删最旧（磁盘文件 + 记录）
 - 单文件 ≤ **50MB**；单模块所有文件总量 ≤ **500MB**（可配置）
 - 文件不做内容加密（备份包含二进制）

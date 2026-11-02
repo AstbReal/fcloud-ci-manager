@@ -170,5 +170,17 @@ logging:
     root: INFO
     ci.fcloud.hub: INFO
     ci.fcloud.hub.auth.OAuth2LoginSuccessHandler: INFO
+  # 应用日志双写：console（docker logs / kubectl logs 可见）+ 文件（落数据卷，
+  # Pod 重建后仍可查）。容器内没有 logrotate，轮转由 Logback 自己做。
+  # 镜像里由 entrypoint 注入绝对路径 ${data-root}/logs/app.log；
+  # 本地 bootRun 未注入时落到 CWD 下的 logs/（已 gitignore）。
+  file:
+    name: "${FCLOUD_LOG_FILE:logs/app.log}"
+  logback:
+    rollingpolicy:
+      max-file-size: 50MB
+      max-history: 7
+      total-size-cap: 500MB
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%thread] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%thread] %logger{36} - %msg%n"

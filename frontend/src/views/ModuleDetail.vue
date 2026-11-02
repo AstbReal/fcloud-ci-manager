@@ -25,11 +25,11 @@
         <button class="btn" @click="importDrawer = true">
           <ProtoIcon name="upload" :size="15" />粘贴导入
         </button>
-        <button class="btn" @click="copyDotenv">
-          <ProtoIcon name="copy" :size="15" />复制 dotenv
+        <button class="btn" @click="openDotenv">
+          <ProtoIcon name="copy" :size="15" />dotenv
         </button>
-        <button class="btn" @click="copyLink()">
-          <ProtoIcon name="arrow-r" :size="15" />复制深链
+        <button class="btn" @click="openLinkDialog">
+          <ProtoIcon name="arrow-r" :size="15" />深链
         </button>
         <button class="btn btn-primary" @click="openAddVariable">
           <ProtoIcon name="plus" :size="15" />变量
@@ -545,6 +545,137 @@
       </template>
     </el-drawer>
 
+    <!-- 导出 dotenv：先看再复制，避免"点一下屏幕闪一下"的盲复制 -->
+    <el-drawer v-model="dotenvOpen" title="导出 dotenv" size="640px">
+      <div class="exp-wrap">
+        <div class="exp-bar">
+          <span class="fld-lb">环境</span>
+          <el-select
+            v-model="dotenvEnvId"
+            class="exp-env"
+            placeholder="不指定（只导出全局值）"
+            clearable
+            @change="loadDotenv"
+          >
+            <el-option
+              v-for="e in envs"
+              :key="e.id"
+              :label="`${e.name} · ${e.code}`"
+              :value="e.id"
+            />
+          </el-select>
+          <span class="exp-hint">按「全局值 → 环境覆盖」解析后的结果导出</span>
+        </div>
+
+        <div v-if="dotenvLoading" class="exp-loading">生成中…</div>
+        <CodeBlock
+          v-else-if="dotenvText"
+          :code="dotenvText"
+          lang="kv"
+          :label="dotenvFileName"
+          max-height="calc(100vh - 320px)"
+          strip-comments
+        />
+        <div v-else class="exp-loading">
+          当前{{ dotenvEnvId ? '环境' : '模块' }}没有可导出的变量
+        </div>
+
+        <template v-if="dotenvText">
+          <div v-if="dotenvMasked" class="exp-note warn">
+            <ProtoIcon name="alert" :size="13" class="c-ic" />
+            <span>
+              没有查看权限的加密变量以 <code class="mono">__MASKED__</code> 占位输出，
+              不要直接写进部署环境；需要明文请联系有权限的成员，或在变量矩阵里逐个解锁。
+            </span>
+          </div>
+          <div v-else class="exp-note">
+            <ProtoIcon name="check" :size="13" class="c-ok" />
+            <span>
+              值已按当前账号权限解析：明文变量原样输出，加密变量有权限时为明文。
+              注释行 <code class="mono"># module:</code> 标出变量来源模块。
+            </span>
+          </div>
+        </template>
+      </div>
+
+      <template #footer>
+        <div class="drawer-foot">
+          <span class="foot-note">{{ dotenvLineCount }} 行 · 复制不含注释，下载保留</span>
+          <div class="foot-actions">
+            <button class="btn" :disabled="!dotenvText" @click="downloadDotenv">
+              <ProtoIcon name="download" :size="14" />下载
+            </button>
+            <button class="btn btn-primary" :disabled="!dotenvText" @click="copyDotenvText">
+              <ProtoIcon name="copy" :size="14" />复制全部
+            </button>
+          </div>
+        </div>
+      </template>
+    </el-drawer>
+
+    <!-- 深链：把整条 URL 摆出来，可换环境 / 变量后再复制 -->
+    <el-dialog v-model="linkOpen" title="模块深链" width="580px">
+      <div class="lk-wrap">
+        <div class="lk-row">
+          <label class="lk-fld">
+            <span class="fld-lb">环境</span>
+            <el-select v-model="linkEnvId" placeholder="不带环境参数" clearable>
+              <el-option
+                v-for="e in envs"
+                :key="e.id"
+                :label="`${e.name} · ${e.code}`"
+                :value="e.id"
+              />
+            </el-select>
+          </label>
+          <label class="lk-fld">
+            <span class="fld-lb">变量<span class="fld-opt">选填</span></span>
+            <el-select
+              v-model="linkVarKey"
+              filterable
+              clearable
+              placeholder="整个模块，不定位到具体变量"
+            >
+              <el-option
+                v-for="r in rows"
+                :key="r.id"
+                :label="r.varKey"
+                :value="r.varKey"
+              />
+            </el-select>
+          </label>
+        </div>
+
+        <CodeBlock :code="linkUrl" lang="text" label="URL" wrap max-height="140px" />
+
+        <div class="lk-note">
+          <ProtoIcon name="lock" :size="13" />
+          <span>
+            深链只带 <b class="mono">env</b> 与 <b class="mono">var</b> 两个定位参数，不含变量值；
+            打开后仍按登录账号的权限渲染。
+          </span>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="drawer-foot">
+          <span class="foot-note">
+            {{
+              linkVarKey
+                ? `打开后定位到 ${linkVarKey}`
+                : '打开后定位到该模块，不带变量高亮'
+            }}
+          </span>
+          <div class="foot-actions">
+            <button class="btn" @click="linkOpen = false">关闭</button>
+            <button class="btn btn-primary" @click="copyLinkFromDialog">
+              <ProtoIcon name="copy" :size="14" />复制深链
+            </button>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
+
     <!-- 模板 diff -->
     <el-drawer v-model="diffDrawer" title="模板同步" size="640px">
       <div v-if="!templateDiff" class="fc-empty">加载中…</div>
@@ -710,8 +841,11 @@ import MatrixToolbar from '@/components/MatrixToolbar.vue'
 import InheritChain from '@/components/InheritChain.vue'
 import ModuleFormDrawer from '@/components/ModuleFormDrawer.vue'
 import FilePreviewDrawer from '@/components/FilePreviewDrawer.vue'
+import CodeBlock from '@/components/CodeBlock.vue'
 import ProtoIcon from '@/components/ProtoIcon.vue'
 import { api, saveBlob } from '@/api/http'
+import { COPY_FAIL_HINT, copyText } from '@/utils/clipboard'
+import { stripCommentLines } from '@/utils/codeHighlight'
 import { useUserStore } from '@/stores/user'
 import { envApi, type Env as EnvOption } from '@/api'
 import { useDeepLink } from '@/composables/useDeepLink'
@@ -812,6 +946,15 @@ const pendingTotalSize = computed(() =>
 const varDrawer = ref(false)
 const importDrawer = ref(false)
 const diffDrawer = ref(false)
+
+// ---- dotenv 导出 / 深链预览 ----
+const dotenvOpen = ref(false)
+const dotenvEnvId = ref<Id | null>(null)
+const dotenvText = ref('')
+const dotenvLoading = ref(false)
+const linkOpen = ref(false)
+const linkEnvId = ref<Id | null>(null)
+const linkVarKey = ref('')
 
 const varForm = reactive<{
   id?: Id
@@ -1282,52 +1425,105 @@ async function doImport() {
   }
 }
 
-async function copyDotenv() {
-  const envId = fileEnvId.value || envs.value[0]?.id
-  if (!envId) {
-    ElMessage.warning('请先给模块绑定环境')
-    return
-  }
-  const res = await api.get<{ dotenv: string }>(
-    `/api/console/modules/${moduleId.value}/variables/export`,
-    { environmentId: envId }
-  )
+// ---- dotenv 导出 ----
+const dotenvFileName = computed(() => `${module.value?.code || 'module'}.env`)
+
+const dotenvLineCount = computed(() =>
+  dotenvText.value.trim() ? dotenvText.value.trimEnd().split('\n').length : 0
+)
+
+/** 后端对无权限的加密变量输出 __MASKED__（§6.4），据此提示而不是自己猜权限 */
+const dotenvMasked = computed(() => dotenvText.value.includes('__MASKED__'))
+
+function openDotenv() {
+  dotenvEnvId.value = fileEnvId.value || envs.value[0]?.id || null
+  dotenvOpen.value = true
+  void loadDotenv()
+}
+
+async function loadDotenv() {
+  dotenvLoading.value = true
   try {
-    await navigator.clipboard.writeText(res.dotenv)
-    ElMessage.success('dotenv 已复制到剪贴板')
+    const res = await api.get<{ dotenv: string; encryptedRevealed?: boolean }>(
+      `/api/console/modules/${moduleId.value}/variables/export`,
+      { environmentId: dotenvEnvId.value ?? undefined }
+    )
+    dotenvText.value = res.dotenv || ''
   } catch {
-    await ElMessageBox.alert(res.dotenv, 'dotenv', { customClass: 'fc-mono' })
+    // 错误已由拦截器提示，这里只保证抽屉不残留上一次的内容
+    dotenvText.value = ''
+  } finally {
+    dotenvLoading.value = false
+  }
+}
+
+async function copyDotenvText() {
+  // 复制去掉 `# module:` 注释行；下载保留，注释是来源说明
+  const text = stripCommentLines(dotenvText.value)
+  if (!text) return
+  if (await copyText(text)) {
+    ElMessage.success('dotenv 已复制（不含注释）')
+  } else {
+    ElMessage.warning({ message: COPY_FAIL_HINT, duration: 6000 })
+  }
+}
+
+function downloadDotenv() {
+  if (!dotenvText.value) return
+  const envCode = envs.value.find((e) => e.id === dotenvEnvId.value)?.code || 'all'
+  saveBlob(
+    new Blob([dotenvText.value], { type: 'text/plain;charset=utf-8' }),
+    `${module.value?.code || 'module'}.${envCode}.env`
+  )
+}
+
+// ---- 深链 ----
+/** 0 / '0' 是「全局值」列的约定值，深链里用 env=global 表示，与解析端一致 */
+function linkEnvParam(envId: Id | null | undefined) {
+  if (String(envId) === '0') return 'global'
+  if (!envId) return ''
+  return envs.value.find((e) => String(e.id) === String(envId))?.code || ''
+}
+
+/** 模块级深链：/modules/{id}?var=DB_HOST&env=prod */
+function buildModuleLink(envId: Id | null, varKey?: string) {
+  const params = new URLSearchParams()
+  if (varKey) params.set('var', varKey)
+  const code = linkEnvParam(envId)
+  if (code) params.set('env', code)
+  const qs = params.toString()
+  return `${location.origin}/modules/${moduleId.value}${qs ? '?' + qs : ''}`
+}
+
+const linkUrl = computed(() => buildModuleLink(linkEnvId.value, linkVarKey.value || undefined))
+
+function openLinkDialog() {
+  linkEnvId.value = fileEnvId.value || envs.value[0]?.id || null
+  linkVarKey.value = ''
+  linkOpen.value = true
+}
+
+async function copyLinkFromDialog() {
+  if (await copyText(linkUrl.value)) {
+    ElMessage.success('深链已复制')
+  } else {
+    ElMessage.warning({ message: COPY_FAIL_HINT, duration: 6000 })
   }
 }
 
 function buildLink(row?: MatrixRow) {
-  const params = new URLSearchParams()
-  if (row) {
-    params.set('var', row.varKey)
-    const envId = activeEnvIdOf(row)
-    if (envId === 0) {
-      params.set('env', 'global')
-    } else if (envId) {
-      const env = envs.value.find((e) => String(e.id) === String(envId))
-      if (env) params.set('env', env.code)
-    }
-  } else {
-    // 页头按钮：当前「文件」面板选中的环境
-    const env = envs.value.find((e) => e.id === fileEnvId.value) || envs.value[0]
-    if (env) params.set('env', env.code)
-  }
-  const qs = params.toString()
-  return `${location.origin}/modules/${moduleId.value}${qs ? '?' + qs : ''}`
+  if (!row) return buildModuleLink(fileEnvId.value || envs.value[0]?.id || null)
+  // activeEnvIdOf 返回 0 表示当前值取自全局值，深链里据此定位到「全局值」列
+  return buildModuleLink(activeEnvIdOf(row), row.varKey)
 }
 
 async function copyLink(row?: MatrixRow) {
   const link = buildLink(row)
   const suffix = row ? ` · ${linkTargetLabel(row)}` : ''
-  try {
-    await navigator.clipboard.writeText(link)
+  if (await copyText(link)) {
     ElMessage.success(`已复制深链${suffix}`)
-  } catch {
-    await ElMessageBox.alert(link, '深链')
+  } else {
+    ElMessage.warning({ message: COPY_FAIL_HINT, duration: 6000 })
   }
 }
 
@@ -2582,5 +2778,120 @@ h4 {
 .callout .c-ic {
   margin-top: 1px;
   color: var(--primary);
+}
+
+/* ---- dotenv 导出 ---- */
+.exp-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.exp-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.exp-env {
+  width: 240px;
+  max-width: 100%;
+}
+
+.exp-hint {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.exp-loading {
+  padding: 44px 0;
+  border: 1px dashed var(--border-2);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.exp-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.exp-note.warn {
+  border-color: #fce6b5;
+  background: var(--warn-50);
+  color: #92400e;
+}
+
+.exp-note .c-ic,
+.exp-note .c-ok {
+  flex: 0 0 13px;
+  margin-top: 2px;
+}
+
+.exp-note .c-ok {
+  color: var(--ok);
+}
+
+.exp-note code.mono {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(16, 24, 40, 0.06);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* ---- 深链 ---- */
+.lk-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lk-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.lk-fld {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.lk-fld :deep(.el-select) {
+  width: 100%;
+}
+
+.lk-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+.lk-note .i {
+  flex: 0 0 13px;
+  margin-top: 2px;
+}
+
+@media (max-width: 600px) {
+  .lk-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>
