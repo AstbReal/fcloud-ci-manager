@@ -1,4 +1,4 @@
-# fcloud-ci-hub 设计与决策书（最终版）
+# fcloud-ci-manager 设计与决策书（最终版）
 
 > 版本：v1.0（2026-10-17）  
 > 状态：全部设计分支已闭环，可直接进入实施  
@@ -727,7 +727,7 @@ files/            # 全部文件版本二进制，路径 {moduleId}/{fileId}/v{n
 ### 11.1 仓库结构
 
 ```
-fcloud-ci-hub/
+fcloud-ci-manager/
 ├── backend/                     # 后端工程（独立 Gradle 根）
 │   ├── build.gradle             # Spring Boot 2.7.17，Java 17
 │   ├── settings.gradle
@@ -761,7 +761,7 @@ fcloud-ci-hub/
 ### 11.2 单镜像组成（交付物 = 一个镜像）
 
 ```
-fcloud-ci-hub:latest
+fcloud-ci-manager:latest
 ├── supervise.sh（PID 1，POSIX sh）
 │   ├── nginx               :8080  对外唯一端口，静态资源 + 反代 /api /oauth /oauth2 /actuator
 │   ├── postgresql 18       :5432  只听 127.0.0.1，数据 /data/config-hub/pg
@@ -873,8 +873,8 @@ fcloud-ci-hub:latest
 ## 附录 A：给执行 Agent 的开场指令（可直接粘贴到本地 WorkBuddy）
 
 ```text
-你要在空仓库中实现 fcloud-ci-hub（配置分发中心）。请先完整阅读同目录的
-《fcloud-ci-hub 设计与决策书（最终版）》并严格遵守其中所有已定决策，不要自行更改技术栈与交互设计。
+你要在空仓库中实现 fcloud-ci-manager（配置分发中心）。请先完整阅读同目录的
+《fcloud-ci-manager 设计与决策书（最终版）》并严格遵守其中所有已定决策，不要自行更改技术栈与交互设计。
 
 执行要求：
 1. 按文档 §12 的 M1–M8 顺序推进，每个里程碑完成后可独立验证再进入下一个。

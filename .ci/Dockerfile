@@ -1,5 +1,5 @@
 # ============================================================================
-# fcloud-ci-hub 应用镜像（§11.2）
+# fcloud-ci-manager 应用镜像（§11.2）
 #
 # 运行时底座是 .ci/base.Dockerfile 产出的 base 镜像，已包含：
 #   Node 20（base 自带）/ OpenJDK 17 / nginx / PostgreSQL / curl / su-exec
@@ -22,7 +22,7 @@
 #   3. 无 supervisor / redis / bash / gettext / tzdata 五个 apk 依赖。
 # ============================================================================
 
-ARG BASE_IMAGE=fcloud-ci-hub-base:latest
+ARG BASE_IMAGE=fcloud-ci-manager-base:latest
 FROM ${BASE_IMAGE}
 
 ENV TZ=UTC \
@@ -49,7 +49,7 @@ RUN (id postgres >/dev/null 2>&1 \
 
 # ---- 应用 ----
 WORKDIR /app
-COPY backend/build/libs/fcloud-ci-hub-1.0.0.jar /app/app.jar
+COPY backend/build/libs/fcloud-ci-manager-1.0.0.jar /app/app.jar
 COPY .ci/frontend-dist /app/static
 
 # ---- 配置与脚本 ----

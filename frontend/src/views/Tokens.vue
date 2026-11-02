@@ -110,7 +110,7 @@
         </div>
         <pre class="config-snippet">{
   "mcpServers": {
-    "fcloud-ci-hub": {
+    "fcloud-ci-manager": {
       "url": "{{ mcpUrl }}",
       "headers": { "Authorization": "Bearer {{ patPlainText }}" }
     }

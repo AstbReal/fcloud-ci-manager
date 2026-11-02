@@ -1,5 +1,5 @@
 # ============================================================================
-# 本地联调：GitLab Lite（测试用 OAuth2 提供方）+ fcloud-ci-hub
+# 本地联调：GitLab Lite（测试用 OAuth2 提供方）+ fcloud-ci-manager
 #
 # 用法：
 #   docker compose -f .ci/gitlab-lite/docker-compose.yml up -d
@@ -7,7 +7,7 @@
 #
 # 网络说明：
 #   两个服务在同一个 compose 网络内，用服务名互访：
-#     fcloud-ci-hub → http://gitlab-lite:8929
+#     fcloud-ci-manager → http://gitlab-lite:8929
 #   但浏览器必须能访问 GitLab 授权页，因此 Location 里的主机名
 #   需要能被宿主解析。这里用 extra_hosts 让容器内的服务名
 #   在宿主上也有对应地址，避免内部主机名泄漏到浏览器。
@@ -34,9 +34,9 @@ services:
     networks: [fcloud-test]
     restart: unless-stopped
 
-  fcloud-ci-hub:
-    image: fcloud-ci-hub:latest
-    container_name: fcloud-ci-hub-oauth
+  fcloud-ci-manager:
+    image: fcloud-ci-manager:latest
+    container_name: fcloud-ci-manager-oauth
     depends_on:
       gitlab-lite:
         condition: service_started

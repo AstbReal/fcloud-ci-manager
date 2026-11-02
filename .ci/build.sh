@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ============================================================================
-# fcloud-ci-hub 镜像构建（§11.2 / §11.5）
+# fcloud-ci-manager 镜像构建（§11.2 / §11.5）
 #
 # 两级镜像：
-#   .ci/base.Dockerfile  → fcloud-ci-hub-base:latest
+#   .ci/base.Dockerfile  → fcloud-ci-manager-base:latest
 #        Node 20 / OpenJDK 17 / nginx / PostgreSQL / curl / su-exec
-#   .ci/Dockerfile       → fcloud-ci-hub:latest
+#   .ci/Dockerfile       → fcloud-ci-manager:latest
 #        在 base 之上补 supervise.sh（sh 进程守护）与应用产物
 #
 # 用法：
@@ -19,7 +19,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."          # 仓库根
 
-BASE_IMAGE="${BASE_IMAGE:-fcloud-ci-hub-base:latest}"
+BASE_IMAGE="${BASE_IMAGE:-fcloud-ci-manager-base:latest}"
 
 die() { echo "!! $*" >&2; exit 1; }
 
@@ -53,7 +53,7 @@ if [ "${1:-}" = "base" ]; then
   exit 0
 fi
 
-TAG="${1:-fcloud-ci-hub:latest}"
+TAG="${1:-fcloud-ci-manager:latest}"
 
 # pnpm 版本由 frontend/package.json 的 packageManager 字段锁定，corepack 按它取版本；
 # 不依赖全局安装，也不会退回 npm 绕开 pnpm-lock。

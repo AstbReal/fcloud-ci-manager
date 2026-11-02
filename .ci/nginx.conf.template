@@ -1,5 +1,5 @@
 # ============================================================================
-# fcloud-ci-hub nginx 配置模板（§11.2）
+# fcloud-ci-manager nginx 配置模板（§11.2）
 # :8080 对外唯一端口：静态资源 + 反代 /api /oauth /oauth2 /actuator
 # 由 entrypoint.sh 用 envsubst 渲染：${FCLOUD_SERVER_PORT} 取上游 Spring Boot 端口
 # ============================================================================

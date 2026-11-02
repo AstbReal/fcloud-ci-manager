@@ -1,6 +1,6 @@
-# fcloud-ci-hub · MCP Server 设计决策书 v1
+# fcloud-ci-manager · MCP Server 设计决策书 v1
 
-> 上位文档：`fcloud-ci-hub-spec.md`（技术栈与领域模型唯一事实源）
+> 上位文档：`fcloud-ci-manager-spec.md`（技术栈与领域模型唯一事实源）
 > 本文只回答一个问题：**怎么把 hub 的配置能力以 MCP 暴露给 AI 客户端**，不改动 spec 已定决策。
 > 状态：**M0–M3 全部实现并端到端验证**（2026-10-21）。
 > 14 个工具（8 只读 + 5 写 + 1 明文），PAT 绑定用户与 scope，写操作全审计。
@@ -9,7 +9,7 @@
 
 ## 0. 定位
 
-一句话：**让 AI 客户端（WorkBuddy / Claude Desktop / Cursor / IDE Agent）直接读写 fcloud-ci-hub 的应用配置，而不必人去点 UI。**
+一句话：**让 AI 客户端（WorkBuddy / Claude Desktop / Cursor / IDE Agent）直接读写 fcloud-ci-manager 的应用配置，而不必人去点 UI。**
 
 三类真实场景决定工具设计：
 
@@ -147,8 +147,8 @@ MCP-Protocol-Version: 2025-06-18
 {"jsonrpc":"2.0","id":1,"result":{
   "protocolVersion":"2025-06-18",
   "capabilities":{"tools":{"listChanged":false}},
-  "serverInfo":{"name":"fcloud-ci-hub","version":"1.0.0"},
-  "instructions":"fcloud-ci-hub 配置中心。查询配置优先用 get_config；不要臆造 key，先 list_modules。"}}
+  "serverInfo":{"name":"fcloud-ci-manager","version":"1.0.0"},
+  "instructions":"fcloud-ci-manager 配置中心。查询配置优先用 get_config；不要臆造 key，先 list_modules。"}}
 
 // → tools/call
 {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{
@@ -514,7 +514,7 @@ public class ExplainConfigValueTool implements McpTool {
 ```json
 {
   "mcpServers": {
-    "fcloud-ci-hub": {
+    "fcloud-ci-manager": {
       "url": "http://127.0.0.1:8080/mcp",
       "headers": { "Authorization": "Bearer chub_pat_xxxxxxxx" }
     }
@@ -699,7 +699,7 @@ backend/src/main/java/ci/fcloud/hub/module/VariableImportService.java
 
 ```bash
 # 只读（默认）
-env -u SERVER__PORT java -jar backend/build/libs/fcloud-ci-hub-1.0.0.jar \
+env -u SERVER__PORT java -jar backend/build/libs/fcloud-ci-manager-1.0.0.jar \
   --server.port=18080 --fcloud.jwt.secret=<32+字符>
 
 # 需要写工具 / 明文时再显式打开（生产默认全关）
@@ -712,7 +712,7 @@ env -u SERVER__PORT java -jar backend/build/libs/fcloud-ci-hub-1.0.0.jar \
 ```json
 {
   "mcpServers": {
-    "fcloud-ci-hub": {
+    "fcloud-ci-manager": {
       "url": "http://127.0.0.1:18080/mcp",
       "headers": { "Authorization": "Bearer chub_xxxxxxxx" }
     }

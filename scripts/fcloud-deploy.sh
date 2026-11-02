@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# 从 fcloud-ci-hub 拉取模块文件，逐模块执行 invoke 任务。
+# 从 fcloud-ci-manager 拉取模块文件，逐模块执行 invoke 任务。
 #
 # 必填环境变量：
 #   FCLOUD_BASE     https://hub.example.com        不带尾斜杠

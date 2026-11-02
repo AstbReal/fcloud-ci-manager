@@ -237,7 +237,7 @@ const mcpUrl = `${location.origin}/mcp`
 const clientSnippet = computed(
   () => `{
   "mcpServers": {
-    "fcloud-ci-hub": {
+    "fcloud-ci-manager": {
       "url": "${mcpUrl}",
       "headers": { "Authorization": "Bearer chub_pat_xxxxxxxx" }
     }

@@ -1,5 +1,5 @@
 # ============================================================================
-# fcloud-ci-hub 单镜像部署（PG + nginx + JVM 全部在一个容器里）
+# fcloud-ci-manager 单镜像部署（PG + nginx + JVM 全部在一个容器里）
 #
 # 前置：
 #   1) 先构建镜像（见 .ci/build.sh）
@@ -14,12 +14,12 @@
 # ⚠️ `docker compose -f .ci/docker-compose.yml down -v` 会连卷一起删，
 #    等于清库；只想停服务用 `down` 或 `stop`。
 # ============================================================================
-name: fcloud-ci-hub
+name: fcloud-ci-manager
 
 services:
   hub:
-    image: ${FCLOUD_IMAGE:-fcloud-ci-hub:latest}
-    container_name: fcloud-ci-hub
+    image: ${FCLOUD_IMAGE:-fcloud-ci-manager:latest}
+    container_name: fcloud-ci-manager
     restart: unless-stopped
     # tini 作为 PID 1，负责转发信号和回收僵尸进程；
     # 业务进程由镜像内的 /app/supervise.sh 管理（PG → nginx → app）。

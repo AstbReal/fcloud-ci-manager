@@ -2,7 +2,7 @@
 # GitLab Lite —— 测试用 OAuth2 提供方
 #
 # 用途：在无法拉取真实 gitlab/gitlab-ce 镜像（约 2.5GB）的环境里，
-#       端到端验证 fcloud-ci-hub 的 GitLab OAuth 登录链路。
+#       端到端验证 fcloud-ci-manager 的 GitLab OAuth 登录链路。
 #
 # 它实现了真实 GitLab 的以下契约，Spring Security OAuth2 Client 无需改动：
 #   GET  /oauth/authorize    授权页

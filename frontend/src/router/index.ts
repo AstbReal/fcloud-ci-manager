@@ -117,7 +117,7 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to) => {
   const t = to.meta.title as string | undefined
-  document.title = t ? `${t} · fcloud-ci-hub` : 'fcloud-ci-hub'
+  document.title = t ? `${t} · fcloud-ci-manager` : 'fcloud-ci-manager'
 })
 
 export default router

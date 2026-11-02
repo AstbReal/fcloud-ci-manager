@@ -5,7 +5,7 @@
         <div class="login-logo">
           <el-icon :size="22"><Cloudy /></el-icon>
         </div>
-        <h2>登录 fcloud-ci-hub</h2>
+        <h2>登录 fcloud-ci-manager</h2>
         <p>使用公司 GitLab 账号登录<br />配置分发中心</p>
 
         <div v-if="authError" class="login-error" role="alert">

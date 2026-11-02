@@ -1,7 +1,7 @@
-# fcloud-ci-hub
+# fcloud-ci-manager
 
 > 面向 CI 流水线的配置分发中心。
-> 本文件是《fcloud-ci-hub 设计与决策书（最终版）》的执行记录与补充决策说明。
+> 本文件是《fcloud-ci-manager 设计与决策书（最终版）》的执行记录与补充决策说明。
 
 ---
 
@@ -34,7 +34,7 @@
 ## 2. 仓库结构
 
 ```
-fcloud-ci-hub/
+fcloud-ci-manager/
 ├── backend/                     # 后端（Spring Boot 单模块 Gradle 工程）
 │   ├── build.gradle             # Spring Boot 2.7.17，Java 17
 │   ├── settings.gradle
@@ -110,7 +110,7 @@ Vite 代理 `/api`、`/oauth2`、`/oauth` → `http://localhost:8080`。
 bash .ci/build.sh base      # 仅首次；会拉 node:20-alpine
 bash .ci/build.sh
 
-# 2) 构建并启动 gitlab-lite + fcloud-ci-hub（同一 compose 网络）
+# 2) 构建并启动 gitlab-lite + fcloud-ci-manager（同一 compose 网络）
 docker compose -f .ci/gitlab-lite/docker-compose.yml up -d --build
 
 # 3) 浏览器打开 http://127.0.0.1:18080 → 自动跳转到 GitLab 授权页
@@ -146,7 +146,7 @@ gitlab-lite 实现的端点（与真实 GitLab 契约一致）：
 
 ```bash
 bash .ci/build.sh base          # 首次；构建底座（会拉 node:20-alpine）
-bash .ci/build.sh               # 构建应用镜像 fcloud-ci-hub:latest
+bash .ci/build.sh               # 构建应用镜像 fcloud-ci-manager:latest
 cp .ci/.env.example .ci/.env    # 填 GitLab 参数与 FCLOUD_JWT_SECRET
 docker compose -f .ci/docker-compose.yml up -d
 ```
@@ -159,7 +159,7 @@ docker compose -f .ci/docker-compose.yml up -d
 - 日志：PG / nginx / JVM 都写容器 stdout，`docker compose -f .ci/docker-compose.yml logs -f hub`
   可看全部；轮转由 json-file driver 负责（20m × 3）。应用另写一份日志文件到数据卷
   `logs/app.log`（Logback 自轮转：单文件 50MB、保留 7 份、总量上限 500MB），路径可用
-  `FCLOUD_LOG_FILE` 覆盖。要只看某一路：`docker logs fcloud-ci-hub 2>&1 | grep -E '^(LOG|FATAL):'`（PG）、
+  `FCLOUD_LOG_FILE` 覆盖。要只看某一路：`docker logs fcloud-ci-manager 2>&1 | grep -E '^(LOG|FATAL):'`（PG）、
   `grep '^\[supervise\]'`（监管与重启记录）
 
 ---
@@ -205,7 +205,7 @@ docker compose -f .ci/docker-compose.yml up -d
 | D12 | 不启用逻辑删除 | `BaseEntity` 无 `deleted`，`mybatis-plus.global-config.db-config` 不配 `logic-delete-field` | 同 D4；§3 schema 无该列 |
 | D13 | `Environment.parentEnvId` 的显式/隐式设置 | 加非持久化字段 `parentEnvIdSet`，自定义 setter 在反序列化时置位 | 需区分"不修改继承关系"（JSON 未携带）与"解除继承"（JSON 传 `null`） |
 | D14 | 请求体中文导致 `Invalid UTF-8` | 验收脚本统一用 ASCII 载荷 | Git Bash/curl 在 Windows 下以 GBK 发送，服务端按 UTF-8 解析；非产品缺陷，属测试脚本环境问题 |
-| D15 | 运行时底座 | 两级镜像：`.ci/base.Dockerfile`（`node:20-alpine` + `apk` 装 openjdk17 / nginx / postgresql / curl / su-exec）产出 `fcloud-ci-hub-base`；`.ci/Dockerfile` 在其上补 `supervise.sh` 与应用产物 | 本机 Docker Hub 部分镜像源不可达，只保留一个可复用的底座层，避免每次构建都重装 JDK/PG。组件版本仍满足 §1.3（JDK17 / PG / nginx），发行版为 Alpine |
+| D15 | 运行时底座 | 两级镜像：`.ci/base.Dockerfile`（`node:20-alpine` + `apk` 装 openjdk17 / nginx / postgresql / curl / su-exec）产出 `fcloud-ci-manager-base`；`.ci/Dockerfile` 在其上补 `supervise.sh` 与应用产物 | 本机 Docker Hub 部分镜像源不可达，只保留一个可复用的底座层，避免每次构建都重装 JDK/PG。组件版本仍满足 §1.3（JDK17 / PG / nginx），发行版为 Alpine |
 | D16 | 前后端构建位置 | 前端 `vite build` 与后端 `bootJar` 在宿主机预构建，产物由 `.ci/build.sh` 收集后 `docker build` 拷入 | 构建环境无法拉取 `node`/`gradle` 基础镜像做多阶段构建；这符合 §11.5「前端构建产物拷入 static」的意图 |
 | D17 | SPA fallback | 服务端 `SpaFallbackController` `forward:/index.html` + nginx `try_files` 双保险 | §11.2 要求 nginx `try_files $uri $uri/ /index.html`；应用内也做一份，便于 `bootRun` 直接调试 |
 | D18 | `/dev-login` 在 nginx 的位置 | 必须显式 `location /dev-login { proxy_pass ... }`，否则被 `location /` 的 `try_files` 吞掉返回 index.html | 实测踩坑：SPA fallback 会把未列出前缀的后端路径也当作前端路由。验收脚本曾因此拿不到 cookie |
@@ -426,20 +426,20 @@ DB_HOST=overridden-by-notify
 
 ### M8 验证记录（§13-12 单镜像）
 
-镜像：`fcloud-ci-hub:latest`。**以下为 2026-10-19 的历史记录**，当时底座是 `postgres:16-alpine`、用 supervisord 且内置 Redis；
+镜像：`fcloud-ci-manager:latest`。**以下为 2026-10-19 的历史记录**，当时底座是 `postgres:16-alpine`、用 supervisord 且内置 Redis；
 当前形态（两级镜像 + `supervise.sh` + 进程内缓存）见 D15 / D26。
 
 `docker run` 命令（与 §13-12 一致）：
 
 ```bash
-docker run -d --name fcloud-ci-hub-test \
+docker run -d --name fcloud-ci-manager-test \
   -e FCLOUD_GITLAB_BASE_URL="https://gitlab.example.com" \
   -e FCLOUD_GITLAB_CLIENT_ID="..." \
   -e FCLOUD_GITLAB_CLIENT_SECRET="..." \
   -e FCLOUD_JWT_SECRET="0123456789abcdef0123456789abcdef0123456789" \
   -v fcloud-data:/data/config-hub \
   -p 18080:8080 \
-  fcloud-ci-hub:latest
+  fcloud-ci-manager:latest
 ```
 
 启动与进程状态：
@@ -509,7 +509,7 @@ PAT 在 **Token 管理 → AI 访问令牌** 签发，明文只展示一次。�
 ```json
 {
   "mcpServers": {
-    "fcloud-ci-hub": {
+    "fcloud-ci-manager": {
       "url": "http://127.0.0.1:8080/mcp",
       "headers": { "Authorization": "Bearer chub_pat_xxxxxxxx" }
     }

@@ -10,7 +10,7 @@ server:
 
 spring:
   application:
-    name: fcloud-ci-hub
+    name: fcloud-ci-manager
 
   datasource:
     url: jdbc:postgresql://${FCLOUD_DB_HOST:127.0.0.1}:${FCLOUD_DB_PORT:5432}/${FCLOUD_DB_NAME:fcloud_ci_hub}

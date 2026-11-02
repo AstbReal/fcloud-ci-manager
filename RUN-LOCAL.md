@@ -8,10 +8,10 @@
 
 ```bash
 # PG 16（WSL 中的 Docker，端口映射到 Windows 127.0.0.1）；Redis 已移除（D26）
-wsl -e bash -c "cd /mnt/d/code/fcloud-ci-hub && docker compose -f .ci/docker-compose.dev.yml up -d"
+wsl -e bash -c "cd /mnt/d/code/fcloud-ci-manager && docker compose -f .ci/docker-compose.dev.yml up -d"
 
 # GitLab OAuth 模拟服务（授权码流程，支持一键登录 force_user）
-wsl -e bash -c "cd /mnt/d/code/fcloud-ci-hub/.ci/gitlab-lite && docker compose up -d --build gitlab-lite"
+wsl -e bash -c "cd /mnt/d/code/fcloud-ci-manager/.ci/gitlab-lite && docker compose up -d --build gitlab-lite"
 ```
 
 - PG：`127.0.0.1:5432`（库 `fcloud_ci_hub`，用户/密码 `fcloud/fcloud`）
@@ -44,7 +44,7 @@ cd D:/code/fcloud-ci-hub/backend
 ```bash
 cd D:/code/fcloud-ci-hub/backend
 ./gradlew bootJar -x test
-env -u SERVER__PORT FCLOUD_JWT_SECRET=0123456789abcdef0123456789abcdef0123456789 java -jar build/libs/fcloud-ci-hub-1.0.0.jar
+env -u SERVER__PORT FCLOUD_JWT_SECRET=0123456789abcdef0123456789abcdef0123456789 java -jar build/libs/fcloud-ci-manager-1.0.0.jar
 ```
 
 ### ⚠️ 已知坑（本机 WorkBuddy 环境）

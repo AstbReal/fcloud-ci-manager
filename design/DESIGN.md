@@ -1,7 +1,7 @@
-# fcloud-ci-hub · UI 设计规范 v1
+# fcloud-ci-manager · UI 设计规范 v1
 
 > 配套可交互原型：`design/ui-prototype.html`（直接双击打开，或访问 `#board` / `#module` 直达某一屏）
-> 上位文档：`fcloud-ci-hub-spec.md` §10。本文件只补充与细化，不推翻已定决策；与 spec 冲突处以本文件末尾「与 spec 的差异」说明为准。
+> 上位文档：`fcloud-ci-manager-spec.md` §10。本文件只补充与细化，不推翻已定决策；与 spec 冲突处以本文件末尾「与 spec 的差异」说明为准。
 
 ---
 

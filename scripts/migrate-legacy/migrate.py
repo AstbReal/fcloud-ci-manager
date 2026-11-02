@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""历史项目 → fcloud-ci-hub 迁移工具（零第三方依赖，Python 3.8+）。
+"""历史项目 → fcloud-ci-manager 迁移工具（零第三方依赖，Python 3.8+）。
 
 扫描的历史项目结构::
 
@@ -719,7 +719,7 @@ def build_invoke_py(scripts: Sequence[Path], base: Path, title: str) -> str:
 
     return f'''#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""{title} 的历史部署脚本合并版（由 fcloud-ci-hub 迁移工具生成）。
+"""{title} 的历史部署脚本合并版（由 fcloud-ci-manager 迁移工具生成）。
 
 来源：{", ".join(rels)}
 用法：
@@ -809,7 +809,7 @@ def read_cookie(args: argparse.Namespace) -> str:
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="历史项目 → fcloud-ci-hub 迁移（默认 dry-run）",
+        description="历史项目 → fcloud-ci-manager 迁移（默认 dry-run）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="示例：\n  python3 migrate.py --root /data/legacy --base-url http://10.0.0.5:8080 "
                "--cookie fcloud_token=...\n  ... --apply")

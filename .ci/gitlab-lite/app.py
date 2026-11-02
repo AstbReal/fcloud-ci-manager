@@ -3,7 +3,7 @@
 """
 轻量 GitLab OAuth2 模拟服务（仅用于本地/CI 测试）
 
-实现的端点与真实 GitLab 契约一致，使 fcloud-ci-hub 的
+实现的端点与真实 GitLab 契约一致，使 fcloud-ci-manager 的
 Spring Security OAuth2 Client 无需任何改动即可完成登录：
 
   GET  /oauth/authorize   授权页（HTML 表单，选择用户后批准）
@@ -134,7 +134,7 @@ INDEX_HTML = """<!DOCTYPE html>
   <h1>GitLab Lite</h1>
   <p class="muted">测试用 OAuth2 提供方 · 非真实 GitLab 实例</p>
   <div class="warn">
-    这是 <b>fcloud-ci-hub 的测试替身</b>：实现了 GitLab 的
+    这是 <b>fcloud-ci-manager 的测试替身</b>：实现了 GitLab 的
     <code>/oauth/authorize</code>、<code>/oauth/token</code>、<code>/api/v4/user</code>
     契约，用于端到端验证登录链路。生产请接真实 GitLab。
   </div>
@@ -181,7 +181,7 @@ AUTHORIZE_HTML = """<!DOCTYPE html>
 </style></head><body>
 <div class="card">
   <h1>授权应用访问你的账号</h1>
-  <p class="muted"><b>fcloud-ci-hub</b> 请求访问你 GitLab 账号的只读信息（<code>read_user</code>）</p>
+  <p class="muted"><b>fcloud-ci-manager</b> 请求访问你 GitLab 账号的只读信息（<code>read_user</code>）</p>
   {links}
   <div class="scope">scope：<code>read_user</code> · 只读用户资料，不能代表你执行任何写操作</div>
 </div></body></html>"""

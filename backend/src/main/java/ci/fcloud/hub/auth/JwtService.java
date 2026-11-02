@@ -29,7 +29,7 @@ public class JwtService {
         String secret = props.getJwt().getSecret();
         if (secret == null || secret.isBlank()) {
             // 未配置时给一个本地开发可用的默认值；生产必须显式提供（§11.3 标记必填）
-            secret = "fcloud-ci-hub-local-dev-secret-please-override";
+            secret = "fcloud-ci-manager-local-dev-secret-please-override";
         }
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.ttlHours = props.getJwt().getTtlHours();

@@ -6,7 +6,7 @@
           <ProtoIcon name="cloud" :size="15" />
         </div>
         <div class="brand-text">
-          <div class="brand-name">fcloud-ci-hub</div>
+          <div class="brand-name">fcloud-ci-manager</div>
           <div class="brand-sub">配置分发中心</div>
         </div>
       </div>
@@ -40,7 +40,7 @@
     <div class="main">
       <header class="topbar">
         <div class="crumb">
-          <span class="crumb-home" @click="router.push('/')">fcloud-ci-hub</span>
+          <span class="crumb-home" @click="router.push('/')">fcloud-ci-manager</span>
           <span class="sep">/</span>
           <b>{{ currentTitle }}</b>
         </div>

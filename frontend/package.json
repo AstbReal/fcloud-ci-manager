@@ -1,5 +1,5 @@
 {
-  "name": "fcloud-ci-hub-web",
+  "name": "fcloud-ci-manager-web",
   "private": true,
   "version": "1.0.0",
   "type": "module",

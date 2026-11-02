@@ -41,7 +41,7 @@ public class McpServer {
             Set.of("2025-06-18", "2025-03-26", "2024-11-05");
 
     private static final String INSTRUCTIONS = """
-            fcloud-ci-hub 是 CI 流水线的配置分发中心，管理「应用 / 模块 / 环境」下的变量与文件。
+            fcloud-ci-manager 是 CI 流水线的配置分发中心，管理「应用 / 模块 / 环境」下的变量与文件。
             使用建议：
             1. 不确定模块 code 时先调 list_modules，不要臆造。
             2. 要完整配置用 get_config（返回 dotenv，与流水线拿到的一致）。
@@ -100,7 +100,7 @@ public class McpServer {
         ObjectNode caps = r.putObject("capabilities");
         caps.putObject("tools").put("listChanged", false);
         ObjectNode info = r.putObject("serverInfo");
-        info.put("name", "fcloud-ci-hub");
+        info.put("name", "fcloud-ci-manager");
         info.put("version", "1.0.0");
         r.put("instructions", INSTRUCTIONS);
         return result(id, r);

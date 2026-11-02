@@ -1,6 +1,6 @@
 #!/bin/sh
 # ============================================================================
-# fcloud-ci-hub 容器入口（§11.2 / §11.3）
+# fcloud-ci-manager 容器入口（§11.2 / §11.3）
 #
 # 只用 Alpine 自带的 /bin/sh（ash），不依赖 bash / gettext / tzdata：
 #   1. 目录与权限准备（/data/config-hub/{pg,storage,backups}）
