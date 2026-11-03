@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -56,45 +57,122 @@ public class VariableResolver {
         if (variable == null) {
             return ResolvedValue.notFound();
         }
-        boolean encrypted = "ENCRYPTED".equalsIgnoreCase(variable.getValueType());
+        return context(List.of(variable))
+                .resolve(variable, applicationId, environmentId, revealPlain);
+    }
 
-        // 收集该变量在该应用下的全部覆盖（按环境索引）
-        OverrideIndex idx = overridesByEnvironment(variable.getId(), applicationId);
+    /**
+     * 预加载一批变量用到的覆盖与环境父子关系，返回可复用的上下文。
+     *
+     * <p>resolveVariable 每次调用要查 1 次覆盖 + 每层继承链 1 次环境；看板要算
+     * 「182 模块 × 3 环境 × 必填变量」，逐次调用就是上千条 SQL。用这个上下文
+     * 把整批数据预加载成 2 条查询，之后的 resolve 全在内存完成。</p>
+     */
+    public Context context(Collection<Variable> variables) {
+        Map<Long, List<VariableOverride>> byVar = new HashMap<>();
+        List<Long> varIds = variables.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(Variable::getId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        if (!varIds.isEmpty()) {
+            List<VariableOverride> all = overrideMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<VariableOverride>()
+                            .in(VariableOverride::getVariableId, varIds));
+            for (VariableOverride o : all) {
+                byVar.computeIfAbsent(o.getVariableId(), k -> new ArrayList<>()).add(o);
+            }
+        }
+        // 环境表很小，整表读进来，免得按父链逐级 selectById
+        Map<Long, Long> parents = new HashMap<>();
+        for (Environment e : environmentMapper.selectList(null)) {
+            parents.put(e.getId(), e.getParentEnvId());
+        }
+        return new Context(byVar, parents);
+    }
 
-        // 环境链（含自身，沿父链向上），防环
-        Deque<Long> chain = envChain(environmentId);
+    /**
+     * 一次查库、多次解析的上下文。解析优先级与 {@link #resolveVariable} 完全一致，
+     * 只是数据来自预加载而不是逐次查询。
+     */
+    public class Context {
 
-        // 第 1、2、3 步：按环境链顺序，每个环境先试应用级、再试模块级
-        boolean firstEnv = true;
-        for (Long envId : chain) {
-            // 私有模块跳过第 1 步（无 application_id）
-            if (applicationId != null) {
-                VariableOverride ao = idx.appLevel().get(envId);
-                if (ao != null) {
-                    return emit(ao.getValue(), encrypted, revealPlain,
-                            firstEnv ? ResolvedValue.Source.APP_OVERRIDE
-                                    : ResolvedValue.Source.APP_OVERRIDE_ANCESTOR,
-                            envId);
+        private final Map<Long, List<VariableOverride>> overridesByVar;
+        private final Map<Long, Long> parentEnvById;
+        private final Map<Long, Deque<Long>> chainCache = new HashMap<>();
+
+        Context(Map<Long, List<VariableOverride>> overridesByVar, Map<Long, Long> parentEnvById) {
+            this.overridesByVar = overridesByVar;
+            this.parentEnvById = parentEnvById;
+        }
+
+        public ResolvedValue resolve(Variable variable, Long applicationId,
+                                     Long environmentId, boolean revealPlain) {
+            if (variable == null) {
+                return ResolvedValue.notFound();
+            }
+            boolean encrypted = "ENCRYPTED".equalsIgnoreCase(variable.getValueType());
+            OverrideIndex idx = indexOf(variable.getId(), applicationId);
+
+            boolean firstEnv = true;
+            for (Long envId : chainOf(environmentId)) {
+                // 私有模块跳过第 1 步（无 application_id）
+                if (applicationId != null) {
+                    VariableOverride ao = idx.appLevel().get(envId);
+                    if (ao != null) {
+                        return emit(ao.getValue(), encrypted, revealPlain,
+                                firstEnv ? ResolvedValue.Source.APP_OVERRIDE
+                                        : ResolvedValue.Source.APP_OVERRIDE_ANCESTOR, envId);
+                    }
+                }
+                VariableOverride mo = idx.moduleLevel().get(envId);
+                if (mo != null) {
+                    return emit(mo.getValue(), encrypted, revealPlain,
+                            firstEnv ? ResolvedValue.Source.MODULE_OVERRIDE
+                                    : ResolvedValue.Source.MODULE_OVERRIDE_ANCESTOR, envId);
+                }
+                firstEnv = false;
+            }
+            if (variable.getGlobalValue() != null) {
+                return emit(variable.getGlobalValue(), encrypted, revealPlain,
+                        ResolvedValue.Source.GLOBAL, null);
+            }
+            return ResolvedValue.notFound();
+        }
+
+        private OverrideIndex indexOf(Long variableId, Long applicationId) {
+            Map<Long, VariableOverride> appLevel = new HashMap<>();
+            Map<Long, VariableOverride> moduleLevel = new HashMap<>();
+            for (VariableOverride o : overridesByVar.getOrDefault(variableId, List.of())) {
+                if (o.getApplicationId() == null) {
+                    moduleLevel.put(o.getEnvironmentId(), o);
+                } else if (applicationId != null && o.getApplicationId().equals(applicationId)) {
+                    // 别的应用的覆盖不参与解析（与原 overridesOf 的防御性过滤等价）
+                    appLevel.put(o.getEnvironmentId(), o);
                 }
             }
-            VariableOverride mo = idx.moduleLevel().get(envId);
-            if (mo != null) {
-                return emit(mo.getValue(), encrypted, revealPlain,
-                        firstEnv ? ResolvedValue.Source.MODULE_OVERRIDE
-                                : ResolvedValue.Source.MODULE_OVERRIDE_ANCESTOR,
-                        envId);
+            return new OverrideIndex(appLevel, moduleLevel);
+        }
+
+        private Deque<Long> chainOf(Long environmentId) {
+            if (environmentId == null) {
+                return new ArrayDeque<>();
             }
-            firstEnv = false;
+            return chainCache.computeIfAbsent(environmentId, id -> {
+                Deque<Long> out = new ArrayDeque<>();
+                Set<Long> visited = new HashSet<>();
+                Long cur = id;
+                while (cur != null && visited.add(cur)) {
+                    out.add(cur);
+                    cur = parentEnvById.get(cur);
+                }
+                if (visited.size() > 64) {
+                    throw new BizException(40000, "环境继承链异常（可能存在环）");
+                }
+                return out;
+            });
         }
-
-        // 第 4 步：全局值
-        if (variable.getGlobalValue() != null) {
-            return emit(variable.getGlobalValue(), encrypted, revealPlain,
-                    ResolvedValue.Source.GLOBAL, null);
-        }
-
-        // 第 5 步：缺失 → 该 key 不输出
-        return ResolvedValue.notFound();
     }
 
     /**
@@ -159,8 +237,9 @@ public class VariableResolver {
                         .eq(Variable::getModuleId, moduleId)
                         .orderByAsc(Variable::getSortOrder)
                         .orderByAsc(Variable::getId));
+        Context ctx = context(vars);
         return vars.stream()
-                .map(v -> new ResolvedEntry(v, resolveVariable(v, applicationId,
+                .map(v -> new ResolvedEntry(v, ctx.resolve(v, applicationId,
                         environmentId, revealPlain)))
                 .toList();
     }

@@ -53,6 +53,9 @@ class VariableResolverTest {
         when(environmentMapper.selectById(DEV)).thenReturn(env(DEV, null));
         when(environmentMapper.selectById(TEST)).thenReturn(env(TEST, DEV));
         when(environmentMapper.selectById(PROD)).thenReturn(env(PROD, TEST));
+        // 一次性解析上下文会把环境表整表读进来（不再逐层 selectById）
+        when(environmentMapper.selectList(any())).thenReturn(
+                List.of(env(DEV, null), env(TEST, DEV), env(PROD, TEST)));
     }
 
     private Environment env(long id, Long parent) {

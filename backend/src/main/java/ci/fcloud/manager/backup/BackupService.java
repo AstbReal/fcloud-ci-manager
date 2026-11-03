@@ -17,6 +17,8 @@ import ci.fcloud.manager.pat.PatService;
 import ci.fcloud.manager.setting.SystemSetting;
 import ci.fcloud.manager.setting.SystemSettingMapper;
 import ci.fcloud.manager.template.Template;
+import ci.fcloud.manager.setting.ArtifactRepoClient;
+import ci.fcloud.manager.setting.ArtifactRepoSettingService;
 import ci.fcloud.manager.template.TemplateMapper;
 import ci.fcloud.manager.template.TemplateVar;
 import ci.fcloud.manager.template.TemplateVarMapper;
@@ -115,6 +117,10 @@ public class BackupService {
     /** 恢复要在后台线程里开事务：显式用 TransactionTemplate，避免 self-invocation 绕过代理 */
     private final org.springframework.transaction.support.TransactionTemplate txTemplate;
 
+    /** 制品库（Artifactory 兼容）异地存放：开关关闭时下面两个 bean 不会被调用 */
+    private final ArtifactRepoSettingService artifactSettings;
+    private final ArtifactRepoClient artifactRepo;
+
     /** 备份打包是 IO 密集型长任务，单独一个单线程执行器，避免占满公共线程池 */
     private final @Qualifier("backupExecutor") TaskExecutor backupExecutor;
 
@@ -208,6 +214,8 @@ public class BackupService {
             rec.setFinishedAt(Instant.now());
             backupMapper.updateById(rec);
             pruneOld();
+            // 本地成功之后再上传；上传失败不改变本地记录的 SUCCESS 状态
+            uploadToRemote(rec);
             log.info("backup {} finished in {} ms ({} bytes)",
                     rec.getFileName(), System.currentTimeMillis() - started, rec.getSize());
         } catch (Exception e) {
@@ -509,6 +517,8 @@ public class BackupService {
      */
     public void pruneOld() {
         int retain = props.getBackup().getRetain();
+        // 只读一次配置：关掉制品库后不该再为每条旧记录跑一次 requireUsable
+        boolean remoteOn = artifactSettings.load().usable();
         List<BackupRecord> all = backupMapper.selectList(
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<BackupRecord>()
                         .ne(BackupRecord::getStatus, "RUNNING")
@@ -520,8 +530,86 @@ public class BackupService {
             } catch (IOException ignored) {
                 // 文件可能已被手动删除
             }
+            // 本地删了，异地那份也一起清掉，两边份数保持一致
+            if (remoteOn && "UPLOADED".equals(old.getRemoteStatus())) {
+                try {
+                    artifactRepo.delete(old.getFileName());
+                } catch (Exception e) {
+                    log.warn("delete remote backup {} failed: {}", old.getRemotePath(), e.getMessage());
+                }
+            }
             backupMapper.deleteById(old.getId());
         }
+    }
+
+    // ==================================================================
+    // 制品库（JFrog Artifactory 兼容）异地存放
+    // ==================================================================
+
+    /**
+     * 把备份包上传到制品库。失败只影响 remote_* 字段，不改动本地备份的成功状态
+     * —— 本地那份是有效的，没必要因为异地失败就把它标成失败。
+     */
+    public BackupRecord uploadToRemote(BackupRecord rec) {
+        ArtifactRepoSettingService.Config cfg = artifactSettings.load();
+        if (!cfg.enabled()) {
+            return rec;
+        }
+        if (!cfg.usable()) {
+            rec.setRemoteStatus("FAILED");
+            rec.setRemoteError("制品库配置不完整：需要 owner / repo / Token");
+            backupMapper.updateById(rec);
+            return rec;
+        }
+        try {
+            Path file = Paths.get(rec.getFilePath());
+            if (!Files.exists(file)) {
+                throw new BizException(40400, "本地备份文件已不存在，无法上传");
+            }
+            artifactRepo.upload(rec.getFileName(), file);
+            rec.setRemoteStatus("UPLOADED");
+            rec.setRemotePath(ArtifactRepoClient.joinPath(cfg.dir(), rec.getFileName()));
+            rec.setRemoteError(null);
+            rec.setRemoteUploadedAt(Instant.now());
+            // 上传成功就顺手裁一次：手动重试走的也是这个方法，不能只在定时备份里裁
+            pruneRemote(props.getBackup().getRetain());
+            log.info("backup {} uploaded to artifact repo as {}", rec.getFileName(), rec.getRemotePath());
+        } catch (Exception e) {
+            rec.setRemoteStatus("FAILED");
+            rec.setRemoteError(truncate(e.getMessage() == null
+                    ? e.getClass().getSimpleName() : e.getMessage(), 900));
+            log.warn("upload backup {} to artifact repo failed: {}", rec.getFileName(), e.getMessage());
+        }
+        backupMapper.updateById(rec);
+        return rec;
+    }
+
+    /** 制品库只保留最近 N 份（跟随本地 retain），超出部分删掉。 */
+    private void pruneRemote(int retain) {
+        ArtifactRepoSettingService.Config cfg = artifactSettings.load();
+        if (!cfg.usable()) {
+            return;
+        }
+        try {
+            List<ArtifactRepoClient.RemoteFile> files = artifactRepo.list().stream()
+                    .filter(f -> f.name().endsWith(".tar.gz"))
+                    .sorted(java.util.Comparator.comparing(ArtifactRepoClient.RemoteFile::name).reversed())
+                    .toList();
+            for (int i = retain; i < files.size(); i++) {
+                artifactRepo.delete(files.get(i).name());
+            }
+        } catch (Exception e) {
+            // 清理是尽力而为，不影响备份结果
+            log.warn("prune remote backups failed: {}", e.getMessage());
+        }
+    }
+
+    /** 制品库上可用的备份（按文件名倒序 = 新的在前）。 */
+    public List<ArtifactRepoClient.RemoteFile> listRemote() {
+        return artifactRepo.list().stream()
+                .filter(f -> f.name().endsWith(".tar.gz"))
+                .sorted(java.util.Comparator.comparing(ArtifactRepoClient.RemoteFile::name).reversed())
+                .toList();
     }
 
     public List<BackupRecord> listAll() {
@@ -551,25 +639,52 @@ public class BackupService {
         String s = normalizeStrategy(strategy);
         assertIdle();
 
-        Path dir = Paths.get(props.getBackup().getDir()).resolve(".restore");
-        Path tmp;
-        try {
-            Files.createDirectories(dir);
-            tmp = Files.createTempFile(dir, "restore-", ".tar.gz");
-            try (InputStream in = file.getInputStream()) {
-                Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
-            }
+        Path tmp = newRestoreTemp();
+        try (InputStream in = file.getInputStream()) {
+            Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new BizException(40000, "备份包读取失败");
         }
-
-        RestoreJob job = new RestoreJob();
         String original = file.getOriginalFilename();
-        job.setFileName(original == null || original.isEmpty()
-                ? tmp.getFileName().toString() : original);
+        return enqueueRestore(tmp,
+                original == null || original.isEmpty() ? tmp.getFileName().toString() : original,
+                file.getSize(), s, createdBy);
+    }
+
+    /**
+     * 从制品库恢复：先把包下到本地临时文件，再走同一套后台任务。
+     * 下载失败不建任务（否则会留下一条永远失败的记录）。
+     */
+    public RestoreJob submitRestoreFromRemote(String remotePath, String strategy, Long createdBy) {
+        if (remotePath == null || remotePath.isBlank()) {
+            throw BizException.badRequest("请选择制品库上的备份");
+        }
+        String s = normalizeStrategy(strategy);
+        assertIdle();
+
+        Path tmp = newRestoreTemp();
+        String fileName = remotePath.substring(remotePath.lastIndexOf('/') + 1);
+        long size;
+        try {
+            artifactRepo.download(fileName, tmp);
+            size = Files.size(tmp);
+        } catch (IOException e) {
+            deleteQuietly(tmp);
+            throw new BizException(50000, "制品库备份包写入失败：" + e.getMessage());
+        } catch (RuntimeException e) {
+            deleteQuietly(tmp);
+            throw e;
+        }
+        return enqueueRestore(tmp, fileName, size, s, createdBy);
+    }
+
+    private RestoreJob enqueueRestore(Path tmp, String displayName, long size,
+                                      String strategy, Long createdBy) {
+        RestoreJob job = new RestoreJob();
+        job.setFileName(displayName);
         job.setFilePath(tmp.toString());
-        job.setSize(file.getSize());
-        job.setStrategy(s);
+        job.setSize(size);
+        job.setStrategy(strategy);
         job.setStatus("RUNNING");
         job.setCreatedBy(createdBy);
         job.setCreatedAt(Instant.now());
@@ -578,6 +693,24 @@ public class BackupService {
         Long id = job.getId();
         backupExecutor.execute(() -> runRestore(id));
         return job;
+    }
+
+    private Path newRestoreTemp() {
+        Path dir = Paths.get(props.getBackup().getDir()).resolve(".restore");
+        try {
+            Files.createDirectories(dir);
+            return Files.createTempFile(dir, "restore-", ".tar.gz");
+        } catch (IOException e) {
+            throw new BizException(50000, "无法创建恢复临时目录");
+        }
+    }
+
+    private static void deleteQuietly(Path p) {
+        try {
+            Files.deleteIfExists(p);
+        } catch (IOException ignored) {
+            // 删不掉不影响结果
+        }
     }
 
     private void runRestore(Long jobId) {

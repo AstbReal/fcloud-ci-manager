@@ -66,6 +66,10 @@ public class SecurityConfig {
                 // 订阅关系是「关系」不是「元素」：登录用户可订阅/取消订阅
                 .antMatchers("/api/console/admin/applications/*/subscriptions/**")
                 .authenticated()
+                // 批量取消订阅走 DELETE /modules/{id}/subscriptions，
+                // 必须排在下面「DELETE 一律仅系统管理员」之前，否则普通用户批量取消会 403
+                .antMatchers(HttpMethod.DELETE, "/api/console/admin/modules/*/subscriptions")
+                .authenticated()
                 // 删除一律仅系统管理员（先于下面的放行规则匹配）
                 .antMatchers(HttpMethod.DELETE, "/api/console/admin/**")
                 .hasRole("SYSTEM_ADMIN")

@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -46,14 +47,12 @@ public class ApplicationService extends ServiceImpl<ApplicationMapper, Applicati
 
     /**
      * 从 GitLab 项目导入应用：code 缺省时由项目名推导。
+     * 落库统一走 {@link #create(Application)}，保证 gitlabProjectId / repoUrl 一并写入。
      */
     public Application importFromGitLab(Long projectId, String code, String name,
                                         String description, String repoUrl) {
         if (projectId == null) {
             throw BizException.badRequest("projectId 不能为空");
-        }
-        if (lambdaQuery().eq(Application::getGitlabProjectId, projectId).count() > 0) {
-            throw BizException.conflict("该项目已经导入过，请直接在看板中查看");
         }
         Application a = new Application();
         String finalCode = code == null || code.isBlank() ? slug(name) : code.trim();
@@ -78,6 +77,11 @@ public class ApplicationService extends ServiceImpl<ApplicationMapper, Applicati
         return s.length() > 48 ? s.substring(0, 48) : s;
     }
 
+    /**
+     * 应用创建的唯一入口。这里必须把入参里所有可落库字段都搬过去 ——
+     * 曾经的写法只 copy 了 code/name/description/sortOrder，
+     * 导致 importFromGitLab 设的 gitlabProjectId / repoUrl 被静默丢弃。
+     */
     public Application create(Application body) {
         if (body.getCode() == null || body.getCode().isBlank()) {
             throw BizException.badRequest("code 不能为空");
@@ -88,14 +92,43 @@ public class ApplicationService extends ServiceImpl<ApplicationMapper, Applicati
         if (lambdaQuery().eq(Application::getCode, body.getCode()).count() > 0) {
             throw BizException.conflict("应用 code 已存在: " + body.getCode());
         }
+        if (body.getGitlabProjectId() != null
+                && lambdaQuery().eq(Application::getGitlabProjectId, body.getGitlabProjectId())
+                        .count() > 0) {
+            throw BizException.conflict("该项目已经导入过，请直接在看板中查看");
+        }
+        Application a = fromBody(body);
+        a.setCreatedBy(SecurityUtils.currentUserId());
+        save(a);
+        return a;
+    }
+
+    /**
+     * 入参 → 新实体的字段搬运，唯一目的是「不再漏字段」。
+     * 之前这里是内联 copy，只搬了 code/name/description/sortOrder，
+     * 于是 importFromGitLab 设好的 gitlabProjectId / repoUrl 被静默丢掉（已修复，见单测）。
+     */
+    static Application fromBody(Application body) {
         Application a = new Application();
         a.setCode(body.getCode());
         a.setName(body.getName());
         a.setDescription(body.getDescription());
         a.setSortOrder(body.getSortOrder() == null ? 0 : body.getSortOrder());
-        a.setCreatedBy(SecurityUtils.currentUserId());
-        save(a);
+        a.setRepoUrl(normalizeRepoUrl(body.getRepoUrl()));
+        a.setGitlabProjectId(body.getGitlabProjectId());
         return a;
+    }
+
+    /** 仓库地址归一化：去空白，空串视为「没有仓库」；列宽 512。 */
+    private static String normalizeRepoUrl(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String url = raw.trim();
+        if (url.length() > 512) {
+            throw BizException.badRequest("仓库地址过长（上限 512 字符）");
+        }
+        return url.isEmpty() ? null : url;
     }
 
     public Application update(Long id, Application body) {
@@ -113,6 +146,11 @@ public class ApplicationService extends ServiceImpl<ApplicationMapper, Applicati
         }
         if (body.getDescription() != null) {
             a.setDescription(body.getDescription());
+        }
+        // 仓库地址可改（GitLab 项目改名/迁移后要能手工同步），传空串表示清空；
+        // gitlabProjectId 是身份标识，编辑不允许修改。
+        if (body.getRepoUrl() != null) {
+            a.setRepoUrl(normalizeRepoUrl(body.getRepoUrl()));
         }
         if (body.getSortOrder() != null) {
             a.setSortOrder(body.getSortOrder());
@@ -145,14 +183,26 @@ public class ApplicationService extends ServiceImpl<ApplicationMapper, Applicati
         removeById(id);
     }
 
+    /**
+     * 拖拽排序。排序变化也算一次更新，所以同步刷新 updated_at —— 注意
+     * lambdaUpdate() 不走 MetaObjectHandler，必须显式 set。
+     * 只更新 sort_order 真的变了的行，避免每次拖拽把所有应用的 updated_at 都刷一遍。
+     */
+    @Transactional
     public void sort(List<Long> ids) {
         if (ids == null) {
             return;
         }
+        Instant now = Instant.now();
         int order = 0;
         for (Long id : ids) {
-            lambdaUpdate().eq(Application::getId, id)
-                    .set(Application::getSortOrder, order++).update();
+            lambdaUpdate()
+                    .eq(Application::getId, id)
+                    .ne(Application::getSortOrder, order)
+                    .set(Application::getSortOrder, order)
+                    .set(Application::getUpdatedAt, now)
+                    .update();
+            order++;
         }
     }
 }

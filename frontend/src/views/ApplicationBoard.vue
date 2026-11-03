@@ -270,6 +270,7 @@
       :busy="drawerBusy"
       @toggle="onDrawerToggle"
       @subscribe-all="onDrawerSubscribeAll"
+      @unsubscribe-all="onDrawerUnsubscribeAll"
       @edit="onEditSharedFromDrawer"
       @remove="onDeleteSharedFromDrawer"
       @open="onOpenSharedMatrix"
@@ -367,6 +368,23 @@
             :rows="3"
             placeholder="这个应用负责什么，谁来维护"
           />
+        </label>
+
+        <label class="fld">
+          <span class="fld-lb">
+            仓库地址
+            <span class="fld-opt">
+              {{ appForm.gitlabProjectId ? `GitLab 项目 #${appForm.gitlabProjectId}` : '选填' }}
+            </span>
+          </span>
+          <el-input
+            v-model="appForm.repoUrl"
+            placeholder="https://gitlab.example.com/group/payment-service"
+            @blur="appForm.repoUrl = (appForm.repoUrl || '').trim()"
+          />
+          <span class="fld-hint">
+            用于从应用跳回代码。项目在 GitLab 改名或迁移后不会自动同步，需要在这里手动改；留空表示不记录。
+          </span>
         </label>
       </div>
 
@@ -514,6 +532,8 @@ const appForm = reactive<{
   source: 'manual' | 'gitlab'
   projectId?: number
   repoUrl?: string
+  /** 仅编辑态展示：该应用来自哪个 GitLab 项目（不可改） */
+  gitlabProjectId?: Id
   code: string
   name: string
   description: string
@@ -826,46 +846,115 @@ function onDrawerToggle(appId: Id) {
   if (app && drawerModule.value) void toggleSub(app, drawerModule.value.id)
 }
 
+/** 批量订阅/批量取消的统一返回 */
+interface BatchResult {
+  requested: number
+  changed: number
+  skipped: number
+}
+
 /**
- * 一键全订阅：只批量"订阅"，不提供批量"取消订阅"。
- * 订阅是可逆的引用；一次撤销所有应用对同一模块的引用属于破坏操作，逐行取消更安全。
+ * 批量订阅。作用范围由抽屉传进来（当前列表里可见的应用），
+ * 搜索状态下只订阅匹配项，不会偷偷把整批都订上。
+ *
+ * 一次请求提交整批 appIds：以前是 for 循环逐个 await，60 个应用就是 60 次串行往返。
  */
-async function onDrawerSubscribeAll() {
+async function onDrawerSubscribeAll(appIds: Id[]) {
   const shared = drawerModule.value
   if (!shared || drawerBusy.value) return
+  const idSet = new Set(appIds.map(String))
   const pending = board.value.applications.filter(
-    (a) => !(a.subscribedModules || []).some((m) => m.id === shared.id)
+    (a) =>
+      idSet.has(String(a.id)) &&
+      !(a.subscribedModules || []).some((m) => m.id === shared.id)
   )
   if (!pending.length) return
 
   drawerBusy.value = true
-  const failed: string[] = []
-  let done = 0
+  let ok = false
   try {
+    const r = await api.post<BatchResult>(
+      `/api/console/admin/modules/${shared.id}/subscriptions`,
+      { appIds: pending.map((a) => a.id) }
+    )
+    // 服务端已确认，本地先补齐，不用等看板重新加载就能看到勾选状态
     for (const app of pending) {
-      try {
-        await api.post(`/api/console/admin/applications/${app.id}/subscriptions`, {
-          moduleId: shared.id
-        })
+      if (!(app.subscribedModules || []).some((m) => m.id === shared.id)) {
         appendSubscription(app, shared)
-        done += 1
-      } catch {
-        failed.push(app.name || app.code)
       }
     }
+    ok = true
+    if (r.changed) {
+      ElMessage.success(`已为 ${r.changed} 个应用订阅「${shared.name}」`)
+    } else {
+      ElMessage.info(`这 ${r.requested} 个应用已订阅「${shared.name}」`)
+    }
+  } catch {
+    // 具体错误由拦截器统一提示，这里不再叠一条
   } finally {
     drawerBusy.value = false
   }
-
-  if (done && !failed.length) {
-    ElMessage.success(`已为 ${done} 个应用订阅「${shared.name}」`)
-  } else if (done) {
-    ElMessage.warning(`已订阅 ${done} 个，${failed.length} 个失败：${failed.join('、')}`)
-  } else {
-    ElMessage.error('全部订阅失败，请重试')
-  }
   // 健康度与订阅计数以后端为准
-  if (done) void load(true)
+  if (ok) void load(true)
+}
+
+/**
+ * 批量取消订阅：会一次性让多个应用失去该模块的引用，属于破坏性操作，
+ * 所以先确认再执行，并在确认框里写清「已配置的值不会删除」。
+ */
+async function onDrawerUnsubscribeAll(appIds: Id[]) {
+  const shared = drawerModule.value
+  if (!shared || drawerBusy.value) return
+  const idSet = new Set(appIds.map(String))
+  const targets = board.value.applications.filter(
+    (a) =>
+      idSet.has(String(a.id)) &&
+      (a.subscribedModules || []).some((m) => m.id === shared.id)
+  )
+  if (!targets.length) return
+
+  try {
+    await ElMessageBox.confirm(
+      `将取消 ${targets.length} 个应用对「${shared.name}」的订阅。` +
+        '这些应用的流水线将不再能引用该模块的变量；已配置的覆盖值不会被删除，重新订阅后仍在。',
+      '批量取消订阅',
+      {
+        type: 'warning',
+        confirmButtonText: `取消 ${targets.length} 个订阅`,
+        confirmButtonClass: 'el-button--danger',
+        cancelButtonText: '再想想'
+      }
+    )
+  } catch {
+    return
+  }
+
+  drawerBusy.value = true
+  let ok = false
+  try {
+    // DELETE 带 body：上百个 id 走 query string 会顶到 URL 长度上限
+    const r = await api.del<BatchResult>(
+      `/api/console/admin/modules/${shared.id}/subscriptions`,
+      { appIds: targets.map((a) => a.id) }
+    )
+    for (const app of targets) {
+      const idx = app.subscribedModules.findIndex((m) => m.id === shared.id)
+      if (idx >= 0) app.subscribedModules.splice(idx, 1)
+    }
+    const remote = board.value.sharedModules.find((m) => m.id === shared.id)
+    if (remote) remote.subscriptionCount = Math.max(0, remote.subscriptionCount - r.changed)
+    ok = true
+    if (r.changed) {
+      ElMessage.success(`已取消 ${r.changed} 个应用对「${shared.name}」的订阅`)
+    } else {
+      ElMessage.info('这些应用本来就没有订阅该模块')
+    }
+  } catch {
+    // 同上，错误提示交给拦截器
+  } finally {
+    drawerBusy.value = false
+  }
+  if (ok) void load(true)
 }
 
 function onEditSharedFromDrawer() {
@@ -890,6 +979,7 @@ function openCreateApp() {
   appForm.source = 'manual'
   appForm.projectId = undefined
   appForm.repoUrl = ''
+  appForm.gitlabProjectId = undefined
   appForm.code = ''
   appForm.name = ''
   appForm.description = ''
@@ -927,7 +1017,8 @@ function onAppCommand(cmd: string, app: BoardApp) {
     appForm.id = app.id
     appForm.source = 'manual'
     appForm.projectId = undefined
-    appForm.repoUrl = ''
+    appForm.repoUrl = app.repoUrl || ''
+    appForm.gitlabProjectId = app.gitlabProjectId
     appForm.code = app.code
     appForm.name = app.name
     appForm.description = app.description || ''
@@ -944,13 +1035,16 @@ async function saveApp() {
     ElMessage.warning('Code 与名称必填')
     return
   }
+  const repoUrl = (appForm.repoUrl || '').trim()
   saving.value = true
   try {
     if (appForm.id) {
       await api.put(`/api/console/admin/applications/${appForm.id}`, {
         code: appForm.code,
         name: appForm.name,
-        description: appForm.description
+        description: appForm.description,
+        // 空串 = 清空仓库地址（后端把空串归一化成 null）
+        repoUrl
       })
     } else if (appForm.source === 'gitlab') {
       if (!appForm.projectId) {
@@ -962,13 +1056,14 @@ async function saveApp() {
         code: appForm.code,
         name: appForm.name,
         description: appForm.description,
-        repoUrl: appForm.repoUrl
+        repoUrl: repoUrl || undefined
       })
     } else {
       await api.post('/api/console/admin/applications', {
         code: appForm.code,
         name: appForm.name,
-        description: appForm.description
+        description: appForm.description,
+        repoUrl: repoUrl || undefined
       })
     }
     ElMessage.success('已保存')

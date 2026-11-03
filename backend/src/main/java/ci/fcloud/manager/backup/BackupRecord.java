@@ -1,5 +1,6 @@
 package ci.fcloud.manager.backup;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import ci.fcloud.manager.common.BaseEntity;
@@ -47,6 +48,20 @@ public class BackupRecord extends BaseEntity {
 
     @TableField("finished_at")
     private Instant finishedAt;
+
+    /** NULL = 未上传（开关关闭或从未尝试）| UPLOADED | FAILED —— 与本地备份状态相互独立 */
+    @TableField("remote_status")
+    private String remoteStatus;
+
+    /** 制品库内的路径，用于下载与清理 */
+    @TableField("remote_path")
+    private String remotePath;
+
+    @TableField(value = "remote_error", updateStrategy = FieldStrategy.IGNORED)
+    private String remoteError;
+
+    @TableField("remote_uploaded_at")
+    private Instant remoteUploadedAt;
 
     @Override
     public Instant getCreatedAt() {

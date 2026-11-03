@@ -457,6 +457,8 @@ GET /api/v1/pipeline/files/{moduleId}/{fileId}?version=3
 | POST   | `/modules/{id}/copy`                             | `{targetAppId, withValues}` 跨应用复制 | 系统管理员  |
 | POST   | `/applications/{appId}/subscriptions`            | `{moduleId}` 订阅（拖拽）               | 系统管理员  |
 | DELETE | `/applications/{appId}/subscriptions/{moduleId}` | 取消订阅（可撤销）                         | 系统管理员  |
+| POST   | `/modules/{id}/subscriptions`                    | `{appIds}` 批量订阅，返回 `{requested,changed,skipped}` | 登录     |
+| DELETE | `/modules/{id}/subscriptions`                    | `{appIds}` 批量取消订阅（DELETE 带 body） | 登录     |
 | GET    | `/modules/{id}/subscribers`                      | 共享模块订阅方                           | 登录     |
 
 ### 5.5 变量（矩阵）
@@ -521,7 +523,33 @@ GET /api/v1/pipeline/files/{moduleId}/{fileId}?version=3
 | POST   | `/backups`                                                    | 立即备份                                                 | 系统管理员 |
 | GET    | `/backups/{id}/download`                                      | 下载备份包                                                | 系统管理员 |
 | POST   | `/backups/restore`                                            | multipart `file + strategy(ABORT\|MERGE\|OVERWRITE)` | 系统管理员 |
+| GET    | `/backups/remote`                                             | 制品库（Gitee 仓库）上可用的备份列表                                | 系统管理员 |
+| POST   | `/backups/{id}/upload`                                        | 手动重试上传到制品库                                           | 系统管理员 |
+| POST   | `/backups/restore-remote`                                     | `{remotePath, strategy}` 从制品库恢复                     | 系统管理员 |
+| GET    | `/settings/gitee`                                             | 制品库配置（token 加密存储，只回显尾 4 位）                            | 系统管理员 |
+| PUT    | `/settings/gitee`                                             | 保存 `{enabled, baseUrl, owner, repo, branch, dir, token}` | 系统管理员 |
+| POST   | `/settings/gitee/test`                                        | 校验 token 与仓库可读性                                      | 系统管理员 |
 | GET    | `/dashboard/todos`                                            | 待办聚合（见 §9.3）                                         | 登录    |
+
+**制品库异地备份**：开关打开后，每份本地备份成功后额外推一份到制品库。
+内网的 Gitee 制品库对外是 **JFrog Artifactory V7 兼容接口**，因此按 Artifactory 协议实现：
+
+| 动作 | 接口 |
+| --- | --- |
+| 上传 | `PUT {base}/artifactory/{repoKey}/{dir}/{fileName}`（body 为文件二进制，流式） |
+| 下载 | `GET {base}/artifactory/{repoKey}/{dir}/{fileName}` |
+| 删除 | `DELETE {base}/artifactory/{repoKey}/{dir}/{fileName}` |
+| 清单 | `GET {base}/api/storage/{repoKey}/{dir}?list&deep=0&listFolders=0` |
+| 探活 | `GET {base}/api/system/ping` + `GET {base}/api/storage/{repoKey}` |
+
+鉴权：配了用户名走 Basic（用户名 + Token），否则 `Authorization: Bearer {token}`。
+上传用 `FileSystemResource` 流式，不把整包读进内存；Artifactory 本身不限单文件，代码里只兜底 2GB。
+
+三个设计约定：
+
+1. **本地副本始终保留**，上传失败只更新 `remote_status=FAILED` + `remote_error`，不改变备份本身的 `SUCCESS`；
+2. **制品库份数跟随 `fcloud.backup.retain`**（默认 3 份），每次上传成功后自动清理更旧的包（手动重试也走同一路径）；
+3. 恢复时先把包下载到临时文件，再走与上传恢复相同的后台任务，因此两者共用冲突检测与策略。
 
 ---
 

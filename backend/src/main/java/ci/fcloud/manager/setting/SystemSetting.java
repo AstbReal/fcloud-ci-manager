@@ -1,6 +1,7 @@
 package ci.fcloud.manager.setting;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -27,6 +28,6 @@ public class SystemSetting {
     @TableField("updated_by")
     private Long updatedBy;
 
-    @TableField("updated_at")
+    @TableField(value = "updated_at", fill = FieldFill.INSERT_UPDATE)
     private Instant updatedAt;
 }

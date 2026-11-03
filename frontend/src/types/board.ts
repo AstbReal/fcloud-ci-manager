@@ -23,6 +23,10 @@ export interface BoardApp {
   name: string
   description?: string
   sortOrder: number
+  /** 仓库地址；GitLab 导入时自动写入，手工应用可为空 */
+  repoUrl?: string
+  /** 来源 GitLab 项目 id；手工创建为空，编辑时只读展示 */
+  gitlabProjectId?: Id
   privateModules: MiniModule[]
   subscribedModules: MiniModule[]
 }

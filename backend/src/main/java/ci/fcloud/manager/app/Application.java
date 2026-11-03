@@ -1,5 +1,7 @@
 package ci.fcloud.manager.app;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import ci.fcloud.manager.common.BaseEntity;
@@ -33,8 +35,12 @@ public class Application extends BaseEntity {
     @TableField("gitlab_project_id")
     private Long gitlabProjectId;
 
-    /** 仓库地址，便于从应用跳回代码 */
-    @TableField("repo_url")
+    /**
+     * 仓库地址，便于从应用跳回代码。
+     * updateStrategy 必须忽略 null：MyBatis-Plus 的 updateById 默认跳过 null 字段，
+     * 否则「清空仓库地址」这个操作永远不生效。
+     */
+    @TableField(value = "repo_url", updateStrategy = FieldStrategy.IGNORED)
     private String repoUrl;
 
     @TableField("created_by")
@@ -43,7 +49,7 @@ public class Application extends BaseEntity {
     @TableField("created_at")
     private Instant createdAt;
 
-    @TableField("updated_at")
+    @TableField(value = "updated_at", fill = FieldFill.INSERT_UPDATE)
     private Instant updatedAt;
 
     @Override

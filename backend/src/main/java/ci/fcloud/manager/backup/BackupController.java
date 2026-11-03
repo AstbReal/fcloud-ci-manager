@@ -95,6 +95,81 @@ public class BackupController {
         return ApiResponse.ok(backupService.listRestores());
     }
 
+    // ---- 制品库（Gitee 仓库） ----
+
+    /** 制品库上可用的备份列表。文件名带时间戳，直接从中解析生成时间，不再逐文件查提交历史。 */
+    @GetMapping("/remote")
+    public ApiResponse<List<RemoteBackupVO>> remote() {
+        List<RemoteBackupVO> out = new java.util.ArrayList<>();
+        for (var f : backupService.listRemote()) {
+            RemoteBackupVO vo = new RemoteBackupVO();
+            vo.setName(f.name());
+            // 通道是 Release 附件，没有目录层级；path 就是附件名，回传给恢复接口
+            vo.setPath(f.name());
+            vo.setSize(f.size());
+            vo.setCreatedAt(parseTimestamp(f.name()));
+            out.add(vo);
+        }
+        return ApiResponse.ok(out);
+    }
+
+    /** 上传失败后手动重试。已上传的再点一次会覆盖同名文件。 */
+    @PostMapping("/{id}/upload")
+    public ApiResponse<BackupRecord> upload(@PathVariable Long id) {
+        BackupRecord r = backupService.requireById(id);
+        if (!"SUCCESS".equals(r.getStatus())) {
+            throw new BizException(40900, "只有本地成功的备份才能上传");
+        }
+        BackupRecord after = backupService.uploadToRemote(r);
+        auditService.log("BACKUP_UPLOAD", "BACKUP", String.valueOf(id), false,
+                auditService.detailJson("fileName", r.getFileName(),
+                        "remoteStatus", after.getRemoteStatus()));
+        return ApiResponse.ok(after);
+    }
+
+    /** 从制品库的备份恢复（下载到临时文件后走与上传恢复相同的后台任务）。 */
+    @PostMapping("/restore-remote")
+    public ApiResponse<RestoreJob> restoreRemote(@RequestBody RemoteRestoreBody body) {
+        RestoreJob job = backupService.submitRestoreFromRemote(
+                body.getRemotePath(), body.getStrategy(), SecurityUtils.currentUserId());
+        auditService.log("BACKUP_RESTORE", "RESTORE", String.valueOf(job.getId()), true,
+                auditService.detailJson("strategy", job.getStrategy(),
+                        "fileName", job.getFileName(), "source", "GITEE"));
+        return ApiResponse.ok(job);
+    }
+
+    /** 文件名形如 fcloud-backup-20261022-005907.tar.gz，解析失败返回 null。 */
+    private static java.time.Instant parseTimestamp(String name) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(\\d{8})-(\\d{6})").matcher(name == null ? "" : name);
+        if (!m.find()) {
+            return null;
+        }
+        try {
+            return java.time.LocalDateTime
+                    .parse(m.group(1) + m.group(2),
+                            java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+                    .atZone(java.time.ZoneId.of("Asia/Shanghai")).toInstant();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    @Data
+    public static class RemoteBackupVO {
+        private String name;
+        private String path;
+        private long size;
+        private String sha;
+        private java.time.Instant createdAt;
+    }
+
+    @Data
+    public static class RemoteRestoreBody {
+        private String remotePath;
+        private String strategy;
+    }
+
     @Data
     public static class RestoreBody {
         private String strategy;

@@ -6,12 +6,15 @@ import ci.fcloud.manager.common.BizException;
 import ci.fcloud.manager.common.SecurityUtils;
 import ci.fcloud.manager.env.Environment;
 import ci.fcloud.manager.env.EnvironmentMapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -332,6 +335,120 @@ public class ModuleService extends ServiceImpl<ModuleMapper, Module> {
         if (n == 0) {
             throw BizException.notFound("订阅关系不存在");
         }
+    }
+
+    /** 单条 INSERT 的最大行数：4 个占位符/行，远低于 PG 的 65535 参数上限 */
+    private static final int BATCH_CHUNK = 500;
+
+    /** 一次批量操作的应用数上限，防止前端传一个超大数组把库拖住 */
+    public static final int MAX_BATCH_APPS = 2000;
+
+    /**
+     * 批量结果的统一口径：
+     * requested 是去重后的请求数，changed 是真正落库的条数，skipped 是本来就已经是目标状态的数量。
+     */
+    public record BatchResult(int requested, int changed, int skipped) {
+    }
+
+    /**
+     * 批量订阅。一次请求 + 一条多值 INSERT，替代前端「N 个应用发 N 次请求」。
+     *
+     * <p>已经订阅过的应用不计为失败：批量操作是幂等的，重复提交应当得到相同结果。
+     */
+    @Transactional
+    public BatchResult subscribeBatch(Long sharedModuleId, List<Long> appIds) {
+        Module m = requireById(sharedModuleId);
+        if (!Boolean.TRUE.equals(m.getIsShared())) {
+            throw BizException.badRequest("只能订阅共享模块: " + m.getCode());
+        }
+        List<Long> ids = normalizeAppIds(appIds);
+        if (ids.isEmpty()) {
+            return new BatchResult(0, 0, 0);
+        }
+
+        // 应用存在性一次校验：静默跳过不存在的 id 会让前端「点了 60 个只成功 58 个」且无从排查
+        Set<Long> known = new HashSet<>();
+        for (Application a : applicationMapper.selectBatchIds(ids)) {
+            known.add(a.getId());
+        }
+        List<Long> missing = ids.stream().filter(id -> !known.contains(id)).toList();
+        if (!missing.isEmpty()) {
+            throw BizException.badRequest("应用不存在: " + joinIds(missing));
+        }
+
+        Set<Long> already = new HashSet<>();
+        for (ModuleSubscription s : subscriptionMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ModuleSubscription>()
+                        .eq(ModuleSubscription::getModuleId, sharedModuleId)
+                        .in(ModuleSubscription::getApplicationId, ids))) {
+            already.add(s.getApplicationId());
+        }
+
+        List<Long> pending = ids.stream().filter(id -> !already.contains(id)).toList();
+        if (pending.isEmpty()) {
+            return new BatchResult(ids.size(), 0, ids.size());
+        }
+
+        Long uid = SecurityUtils.currentUserId();
+        List<ModuleSubscription> rows = new ArrayList<>(pending.size());
+        for (Long appId : pending) {
+            ModuleSubscription s = new ModuleSubscription();
+            s.setId(IdWorker.getId());
+            s.setModuleId(sharedModuleId);
+            s.setApplicationId(appId);
+            s.setCreatedBy(uid);
+            rows.add(s);
+        }
+
+        int changed = 0;
+        for (int i = 0; i < rows.size(); i += BATCH_CHUNK) {
+            changed += subscriptionMapper.batchInsert(
+                    rows.subList(i, Math.min(i + BATCH_CHUNK, rows.size())));
+        }
+        return new BatchResult(ids.size(), changed, ids.size() - changed);
+    }
+
+    /**
+     * 批量取消订阅。一条 DELETE ... IN (...) 搞定，不存在的订阅按 skipped 计数（幂等）。
+     */
+    @Transactional
+    public BatchResult unsubscribeBatch(Long sharedModuleId, List<Long> appIds) {
+        List<Long> ids = normalizeAppIds(appIds);
+        if (ids.isEmpty()) {
+            return new BatchResult(0, 0, 0);
+        }
+        int changed = 0;
+        for (int i = 0; i < ids.size(); i += BATCH_CHUNK) {
+            changed += subscriptionMapper.delete(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ModuleSubscription>()
+                            .eq(ModuleSubscription::getModuleId, sharedModuleId)
+                            .in(ModuleSubscription::getApplicationId,
+                                    ids.subList(i, Math.min(i + BATCH_CHUNK, ids.size()))));
+        }
+        return new BatchResult(ids.size(), changed, ids.size() - changed);
+    }
+
+    /** 去空、去重（保序）、限长；前端传重复 id 不该造成重复插入或计数虚高 */
+    private static List<Long> normalizeAppIds(List<Long> appIds) {
+        if (appIds == null || appIds.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> unique = new LinkedHashSet<>();
+        for (Long id : appIds) {
+            if (id != null) {
+                unique.add(id);
+            }
+        }
+        if (unique.size() > MAX_BATCH_APPS) {
+            throw BizException.badRequest(
+                    "一次最多处理 " + MAX_BATCH_APPS + " 个应用，请分批提交");
+        }
+        return new ArrayList<>(unique);
+    }
+
+    private static String joinIds(List<Long> ids) {
+        return ids.stream().limit(5).map(String::valueOf)
+                .reduce((a, b) -> a + "、" + b).orElse("");
     }
 
     public List<Module> listByApplication(Long appId) {

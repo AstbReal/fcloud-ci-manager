@@ -1,5 +1,6 @@
 package ci.fcloud.manager.user;
 
+import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import ci.fcloud.manager.common.BaseEntity;
@@ -43,7 +44,7 @@ public class User extends BaseEntity {
     @TableField("created_at")
     private Instant createdAt;
 
-    @TableField("updated_at")
+    @TableField(value = "updated_at", fill = FieldFill.INSERT_UPDATE)
     private Instant updatedAt;
 
     @Override

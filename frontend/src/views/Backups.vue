@@ -19,15 +19,17 @@
             备份记录<span class="n">{{ records.length }}</span>
           </div>
         </div>
+        <div class="bk-scroll">
         <table class="bk-table">
           <thead>
             <tr>
               <th>文件名</th>
-              <th style="width: 90px">大小</th>
-              <th style="width: 76px">类型</th>
-              <th style="width: 88px">状态</th>
-              <th style="width: 150px">生成时间</th>
-              <th style="width: 72px"></th>
+              <th style="width: 76px">大小</th>
+              <th style="width: 68px">类型</th>
+              <th style="width: 66px">状态</th>
+              <th style="width: 92px">制品库</th>
+              <th style="width: 152px">生成时间</th>
+              <th style="width: 76px"></th>
             </tr>
           </thead>
           <tbody>
@@ -52,6 +54,25 @@
                   {{ statusLabel(row.status) }}
                 </span>
               </td>
+              <td>
+                <span
+                  v-if="row.remoteStatus === 'UPLOADED'"
+                  class="tag tag-ok"
+                  :title="row.remotePath || ''"
+                >
+                  已上传
+                </span>
+                <button
+                  v-else-if="row.remoteStatus === 'FAILED'"
+                  class="btn-ghost danger-text"
+                  :title="row.remoteError || '上传失败'"
+                  :disabled="uploadingId === row.id"
+                  @click="uploadRow(row)"
+                >
+                  {{ uploadingId === row.id ? '重试中…' : '失败 · 重试' }}
+                </button>
+                <span v-else class="muted">{{ artifactEnabled ? '待上传' : '未开启' }}</span>
+              </td>
               <td class="muted num">{{ fmt(row.createdAt) }}</td>
               <td>
                 <button
@@ -64,13 +85,14 @@
               </td>
             </tr>
             <tr v-if="!records.length">
-              <td colspan="6" class="empty-row">
+              <td colspan="7" class="empty-row">
                 <el-icon :size="26" color="#c3c9d4"><Box /></el-icon>
                 <div>还没有备份，点右上「立即备份」生成第一份。</div>
               </td>
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
 
       <div class="card">
@@ -78,7 +100,29 @@
           <div class="card-title">从备份恢复</div>
         </div>
         <div class="card-body">
+          <div class="src-tabs">
+            <button
+              class="src-tab"
+              :class="{ on: source === 'local' }"
+              @click="source = 'local'"
+            >
+              本地文件
+            </button>
+            <button
+              class="src-tab"
+              :class="{ on: source === 'gitee' }"
+              :disabled="!artifactEnabled"
+              :title="artifactEnabled ? '' : '还没有在系统管理里开启制品库'"
+              @click="chooseGiteeSource"
+            >
+              制品库
+            </button>
+          </div>
+
+          <input ref="fileInput" type="file" accept=".gz,.tgz,.tar.gz" hidden @change="onPick" />
+
           <div
+            v-if="source === 'local'"
             class="drop-zone"
             :class="{ on: dragOver, filled: !!restoreFile }"
             @click="pickFile"
@@ -95,7 +139,28 @@
               <span class="drop-size">{{ formatSize(restoreFile.size) }} · 点击更换</span>
             </div>
           </div>
-          <input ref="fileInput" type="file" accept=".gz,.tgz,.tar.gz" hidden @change="onPick" />
+
+          <div v-else class="remote-box">
+            <div v-if="remoteLoading" class="remote-empty">正在读取制品库…</div>
+            <template v-else-if="remoteFiles.length">
+              <button
+                v-for="f in remoteFiles"
+                :key="f.path"
+                class="remote-item"
+                :class="{ on: selectedRemote === f.path }"
+                @click="selectedRemote = f.path"
+              >
+                <span class="rf-name mono">{{ f.name }}</span>
+                <span class="rf-meta">{{ formatSize(Number(f.size)) }} · {{ fmt(f.createdAt) }}</span>
+              </button>
+            </template>
+            <div v-else class="remote-empty">
+              制品库上还没有备份，先开启上传并生成一份。
+            </div>
+            <button class="btn btn-ghost btn-sm rf-refresh" @click="loadRemote">
+              <ProtoIcon name="sync" :size="13" />刷新列表
+            </button>
+          </div>
 
           <div class="strategy-title">恢复策略</div>
           <div class="strategy-list">
@@ -187,6 +252,20 @@ interface BackupRow {
   status?: string
   errorMessage?: string
   finishedAt?: string
+  /** 制品库上传状态：null | UPLOADED | FAILED */
+  remoteStatus?: string | null
+  remotePath?: string | null
+  remoteError?: string | null
+  remoteUploadedAt?: string | null
+}
+
+interface RemoteRow {
+  name: string
+  path: string
+  /** 后端 Long 统一按字符串下发 */
+  size: number | string
+  sha: string
+  createdAt?: string | null
 }
 
 interface RestoreJobRow {
@@ -225,12 +304,71 @@ const strategies = [
 ]
 
 const canRestore = computed(() => {
-  if (!restoreFile.value) return false
+  if (source.value === 'gitee') {
+    if (!selectedRemote.value) return false
+  } else if (!restoreFile.value) {
+    return false
+  }
   if (strategy.value === 'OVERWRITE') return overwriteConfirm.value === 'OVERWRITE'
   return true
 })
 
-function fmt(v?: string) {
+// ---- 恢复来源：本地文件 / 制品库 ----
+const source = ref<'local' | 'gitee'>('local')
+const artifactEnabled = ref(false)
+const remoteFiles = ref<RemoteRow[]>([])
+const remoteLoading = ref(false)
+const selectedRemote = ref('')
+const uploadingId = ref<Id | null>(null)
+
+async function loadArtifactState() {
+  try {
+    const d = await api.get<{ enabled: boolean; hasToken: boolean }>(
+      '/api/console/admin/settings/artifact'
+    )
+    artifactEnabled.value = d.enabled && d.hasToken
+  } catch {
+    artifactEnabled.value = false
+  }
+}
+
+async function loadRemote() {
+  remoteLoading.value = true
+  try {
+    remoteFiles.value = await api.get('/api/console/admin/backups/remote')
+    if (!remoteFiles.value.some((f) => f.path === selectedRemote.value)) {
+      selectedRemote.value = remoteFiles.value[0]?.path || ''
+    }
+  } catch {
+    remoteFiles.value = []
+  } finally {
+    remoteLoading.value = false
+  }
+}
+
+function chooseGiteeSource() {
+  if (!artifactEnabled.value) return
+  source.value = 'gitee'
+  if (!remoteFiles.value.length) void loadRemote()
+}
+
+async function uploadRow(row: BackupRow) {
+  uploadingId.value = row.id
+  try {
+    const updated = await api.post<BackupRow>(`/api/console/admin/backups/${row.id}/upload`)
+    if (updated.remoteStatus === 'UPLOADED') {
+      ElMessage.success('已上传到制品库')
+    } else {
+      ElMessage.error(updated.remoteError || '上传失败')
+    }
+    await load()
+    if (source.value === 'gitee') await loadRemote()
+  } finally {
+    uploadingId.value = null
+  }
+}
+
+function fmt(v?: string | null) {
   return v ? new Date(v).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-') : '—'
 }
 
@@ -344,6 +482,24 @@ function onDrop(e: DragEvent) {
 }
 
 async function doRestore() {
+  if (source.value === 'gitee') {
+    if (!selectedRemote.value) return
+    restoring.value = true
+    try {
+      const job = await api.post<RestoreJobRow>(
+        '/api/console/admin/backups/restore-remote',
+        { remotePath: selectedRemote.value, strategy: strategy.value }
+      )
+      ElMessage.success('恢复任务已提交，正在后台执行…')
+      overwriteConfirm.value = ''
+      selectedRemote.value = ''
+      startRestorePoll(job.id)
+    } catch {
+      restoring.value = false
+    }
+    return
+  }
+
   if (!restoreFile.value) return
   restoring.value = true
   try {
@@ -417,7 +573,7 @@ function startRestorePoll(targetId?: Id) {
 }
 
 onMounted(async () => {
-  await Promise.all([load(), loadRestores()])
+  await Promise.all([load(), loadRestores(), loadArtifactState()])
   // 刷新页面时如果还有任务在跑，接着轮询
   if (records.value.some((r) => statusOf(r) === 'RUNNING')) {
     startPoll()
@@ -479,15 +635,20 @@ onBeforeUnmount(() => {
   padding: 14px 16px;
 }
 
+.bk-scroll {
+  overflow-x: auto;
+}
+
 .bk-table {
   width: 100%;
+  min-width: 740px;
   border-collapse: collapse;
   table-layout: fixed;
 }
 
 .bk-table th {
   height: 36px;
-  padding: 0 16px;
+  padding: 0 12px;
   text-align: left;
   font-size: 11.5px;
   font-weight: 600;
@@ -498,7 +659,7 @@ onBeforeUnmount(() => {
 
 .bk-table td {
   height: 44px;
-  padding: 0 16px;
+  padding: 0 12px;
   font-size: 13px;
   border-bottom: 1px solid #f0f1f5;
   white-space: nowrap;
@@ -603,6 +764,99 @@ onBeforeUnmount(() => {
 }
 
 .rl-detail.err {
+  color: var(--danger);
+}
+
+.src-tabs {
+  display: inline-flex;
+  padding: 2px;
+  margin-bottom: 12px;
+  background: var(--surface-3);
+  border-radius: var(--r-sm);
+}
+
+.src-tab {
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.src-tab.on {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: var(--sh-1);
+}
+
+.src-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.remote-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 208px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.remote-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.remote-item:hover {
+  background: var(--surface);
+}
+
+.remote-item.on {
+  border-color: var(--primary);
+  background: var(--primary-50);
+}
+
+.rf-name {
+  font-size: 12.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rf-meta {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.remote-empty {
+  padding: 18px 8px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.rf-refresh {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.danger-text {
   color: var(--danger);
 }
 

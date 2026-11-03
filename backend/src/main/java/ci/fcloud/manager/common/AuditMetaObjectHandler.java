@@ -29,8 +29,12 @@ public class AuditMetaObjectHandler implements MetaObjectHandler {
 
     @Override
     public void updateFill(MetaObject metaObject) {
+        // 这里必须用 setFieldValByName 而不是 strictUpdateFill：
+        // strictUpdateFill 只在字段为 null 时才填，而业务代码普遍是
+        // 「requireById 读出实体 → 改几个字段 → updateById」，实体上带着数据库里的旧
+        // updatedAt，strict 判定「已有值」直接跳过，更新时间就永远不刷新（实测过）。
         if (metaObject.hasSetter("updatedAt")) {
-            strictUpdateFill(metaObject, "updatedAt", Instant.class, Instant.now());
+            setFieldValByName("updatedAt", Instant.now(), metaObject);
         }
     }
 }

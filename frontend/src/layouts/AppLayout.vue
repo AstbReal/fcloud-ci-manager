@@ -142,14 +142,16 @@ const healthText = computed(() => {
 
 async function loadMeta() {
   try {
-    const r = await fetch('/api/console/dashboard/todos', { credentials: 'same-origin' })
+    // 侧栏角标只要三个数字，走计数接口；/dashboard/todos 是工作台页面的全量聚合
+    // （含缺值解析），放在外壳里会让每次进入任意页面都跑一遍。
+    const r = await fetch('/api/console/dashboard/todo-count', { credentials: 'same-origin' })
     if (r.ok) {
       const body = await r.json()
       const d = body?.data || {}
       todoCount.value =
-        (d.missingRequired?.length || 0) +
-        (d.templateUpdates?.length || 0) +
-        (d.expiringTokens?.length || 0)
+        (d.missingRequired || 0) +
+        (d.templateUpdates || 0) +
+        (d.expiringTokens || 0)
     }
   } catch {
     // 侧栏角标失败不影响使用

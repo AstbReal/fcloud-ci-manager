@@ -6,12 +6,17 @@ import ci.fcloud.manager.app.ApplicationService;
 import ci.fcloud.manager.common.ApiResponse;
 import ci.fcloud.manager.common.BizException;
 import ci.fcloud.manager.common.SecurityUtils;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * §5.4 模块 / 订阅 / 分组 / 复制。写操作仅系统管理员。
@@ -67,11 +72,19 @@ public class ModuleController {
                 .orderByAsc(Module::getSortOrder)
                 .orderByAsc(Module::getId)
                 .list();
-        java.util.Map<Long, String> appCodes = new java.util.HashMap<>();
-        for (Application a : applicationMapper.selectList(null)) {
-            appCodes.put(a.getId(), a.getCode());
+        if (modules.isEmpty()) {
+            return ApiResponse.ok(List.of());
         }
-        return ApiResponse.ok(modules.stream().map(m -> {
+        // 批量聚合，避免逐模块 selectCount 造成的 N+1（182 个模块曾是 364 条 SQL / ~900ms）
+        Map<Long, Application> apps = new HashMap<>();
+        for (Application a : applicationMapper.selectList(null)) {
+            apps.put(a.getId(), a);
+        }
+        Map<Long, Integer> varCounts = countByModuleId(variableMapper);
+        Map<Long, Integer> envCounts = countByModuleId(moduleEnvMapper);
+
+        List<ModuleListVO> out = new ArrayList<>(modules.size());
+        for (Module m : modules) {
             ModuleListVO vo = new ModuleListVO();
             vo.setId(m.getId());
             vo.setCode(m.getCode());
@@ -80,17 +93,39 @@ public class ModuleController {
             vo.setIsShared(m.getIsShared());
             vo.setGroupName(m.getGroupName());
             vo.setApplicationId(m.getApplicationId());
-            vo.setApplicationCode(m.getApplicationId() == null
-                    ? null : appCodes.get(m.getApplicationId()));
+            Application app = m.getApplicationId() == null ? null : apps.get(m.getApplicationId());
+            vo.setApplicationCode(app == null ? null : app.getCode());
+            vo.setApplicationName(app == null ? null : app.getName());
             vo.setUpdatedAt(m.getUpdatedAt());
-            vo.setVariableCount(variableMapper.selectCount(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Variable>()
-                            .eq(Variable::getModuleId, m.getId())).intValue());
-            vo.setEnvironmentCount(moduleEnvMapper.selectCount(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ModuleEnv>()
-                            .eq(ModuleEnv::getModuleId, m.getId())).intValue());
-            return vo;
-        }).toList());
+            vo.setVariableCount(varCounts.getOrDefault(m.getId(), 0));
+            vo.setEnvironmentCount(envCounts.getOrDefault(m.getId(), 0));
+            out.add(vo);
+        }
+        return ApiResponse.ok(out);
+    }
+
+    /** 一条 GROUP BY 拿全部模块的计数，替代逐行 selectCount。 */
+    private static <T> Map<Long, Integer> countByModuleId(BaseMapper<T> mapper) {
+        QueryWrapper<T> qw = new QueryWrapper<>();
+        qw.select("module_id", "count(*) as cnt").groupBy("module_id");
+        Map<Long, Integer> out = new HashMap<>();
+        for (Map<String, Object> row : mapper.selectMaps(qw)) {
+            Long moduleId = null;
+            Integer cnt = null;
+            // MyBatis 对 Map 结果的列名大小写/下划线处理不统一，这里按键名归一化后匹配
+            for (Map.Entry<String, Object> e : row.entrySet()) {
+                String k = e.getKey().toLowerCase().replace("_", "");
+                if ("moduleid".equals(k) && e.getValue() instanceof Number n) {
+                    moduleId = n.longValue();
+                } else if ("cnt".equals(k) && e.getValue() instanceof Number n) {
+                    cnt = n.intValue();
+                }
+            }
+            if (moduleId != null && cnt != null) {
+                out.put(moduleId, cnt);
+            }
+        }
+        return out;
     }
 
     @GetMapping("/modules/{id}")
@@ -156,6 +191,27 @@ public class ModuleController {
     public ApiResponse<Void> unsubscribe(@PathVariable Long appId, @PathVariable Long moduleId) {
         moduleService.unsubscribe(appId, moduleId);
         return ApiResponse.ok();
+    }
+
+    /**
+     * 批量订阅：一个模块 × 一批应用。
+     *
+     * <p>放在 modules 下面是刻意的 —— 批量操作的主体是「模块的订阅方集合」，
+     * 应用侧的单条接口继续服务「在某个应用里勾选模块」的场景。
+     */
+    @PostMapping("/modules/{id}/subscriptions")
+    public ApiResponse<ModuleService.BatchResult> subscribeBatch(
+            @PathVariable Long id, @RequestBody SubscriptionBatchBody body) {
+        return ApiResponse.ok(moduleService.subscribeBatch(id, body.getAppIds()));
+    }
+
+    /**
+     * 批量取消订阅。DELETE 带 JSON body：ids 可能上百个，走 query string 会顶到 URL 长度上限。
+     */
+    @DeleteMapping("/modules/{id}/subscriptions")
+    public ApiResponse<ModuleService.BatchResult> unsubscribeBatch(
+            @PathVariable Long id, @RequestBody SubscriptionBatchBody body) {
+        return ApiResponse.ok(moduleService.unsubscribeBatch(id, body.getAppIds()));
     }
 
     @GetMapping("/modules/{id}/environment-ids")
@@ -237,6 +293,12 @@ public class ModuleController {
     }
 
     @Data
+    public static class SubscriptionBatchBody {
+        /** 应用 id 列表；后端会去重、去空，重复提交按幂等处理 */
+        private List<Long> appIds;
+    }
+
+    @Data
     public static class ModuleListVO {
         private Long id;
         private String code;
@@ -246,6 +308,7 @@ public class ModuleController {
         private String groupName;
         private Long applicationId;
         private String applicationCode;
+        private String applicationName;
         private int variableCount;
         private int environmentCount;
         private Instant updatedAt;

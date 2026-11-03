@@ -3,11 +3,19 @@ package ci.fcloud.manager.app;
 import ci.fcloud.manager.audit.AuditLog;
 import ci.fcloud.manager.audit.AuditLogMapper;
 import ci.fcloud.manager.common.ApiResponse;
-import ci.fcloud.manager.common.PageResult;
 import ci.fcloud.manager.common.SecurityUtils;
 import ci.fcloud.manager.env.Environment;
 import ci.fcloud.manager.env.EnvironmentMapper;
-import ci.fcloud.manager.module.*;
+// 必须逐个 import：通配符会和 java.lang.Module 冲突（Java 9+），出现「对 Module 的引用不明确」
+import ci.fcloud.manager.module.Module;
+import ci.fcloud.manager.module.ModuleEnv;
+import ci.fcloud.manager.module.ModuleEnvMapper;
+import ci.fcloud.manager.module.ModuleMapper;
+import ci.fcloud.manager.module.Variable;
+import ci.fcloud.manager.module.VariableMapper;
+import ci.fcloud.manager.module.VariableResolver;
+import ci.fcloud.manager.template.Template;
+import ci.fcloud.manager.template.TemplateMapper;
 import ci.fcloud.manager.token.ApiToken;
 import ci.fcloud.manager.token.ApiTokenMapper;
 import lombok.Data;
@@ -19,7 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * §9.3 工作台待办聚合（登录可读）。
@@ -29,6 +41,9 @@ import java.util.List;
  * 2. 模板待同步的模块
  * 3. 7 天内到期的 API Token（仅系统管理员可见）
  * 4. 最近 24h 高危操作（仅系统管理员可见）
+ *
+ * <p>侧栏角标只需要一个数字，走 {@code /todo-count}：数据来源同一套批量加载，
+ * 但不再拼装完整列表。{@code /todos} 是工作台页面的数据源。</p>
  */
 @RestController
 @RequestMapping("/api/console/dashboard")
@@ -43,83 +58,46 @@ public class DashboardController {
     private final ApiTokenMapper tokenMapper;
     private final AuditLogMapper auditLogMapper;
     private final ApplicationMapper applicationMapper;
+    private final TemplateMapper templateMapper;
 
+    /** 工作台页面用：完整待办列表。 */
     @GetMapping("/todos")
     public ApiResponse<Todos> todos() {
+        Snapshot s = snapshot();
         Todos out = new Todos();
-        boolean admin = SecurityUtils.isSystemAdmin();
 
-        List<Environment> envs = environmentMapper.selectList(null);
-        List<ci.fcloud.manager.module.Module> modules = moduleMapper.selectList(null);
-
-        // 1) 缺必填变量：模块绑定的每个环境下，必填变量都应有值
-        for (ci.fcloud.manager.module.Module m : modules) {
-            List<Long> bound = moduleEnvMapper.selectList(
-                            new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ModuleEnv>()
-                                    .eq(ModuleEnv::getModuleId, m.getId()))
-                    .stream().map(ModuleEnv::getEnvironmentId).toList();
-            if (bound.isEmpty()) {
-                continue;
-            }
-            List<Variable> required = variableMapper.selectList(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Variable>()
-                            .eq(Variable::getModuleId, m.getId())
-                            .eq(Variable::getIsRequired, true));
-            if (required.isEmpty()) {
-                continue;
-            }
-            for (Long envId : bound) {
-                List<String> missing = new ArrayList<>();
-                for (Variable v : required) {
-                    ResolvedValue rv = variableResolver.resolveVariable(
-                            v, m.getApplicationId(), envId, false);
-                    if (!rv.isFound()) {
-                        missing.add(v.getVarKey());
-                    }
-                }
-                if (!missing.isEmpty()) {
-                    Environment env = envs.stream()
-                            .filter(e -> e.getId().equals(envId)).findFirst().orElse(null);
-                    MissingRequired mr = new MissingRequired();
-                    mr.setModuleId(m.getId());
-                    mr.setModuleCode(m.getCode());
-                    mr.setModuleName(m.getName() + " (" + m.getCode() + ")");
-                    mr.setEnvironmentId(envId);
-                    mr.setEnvironmentCode(env == null ? null : env.getCode());
-                    mr.setEnvironmentName(env == null ? String.valueOf(envId) : env.getName());
-                    mr.setMissingKeys(missing);
-                    out.missingRequired.add(mr);
-                }
-            }
+        for (MissingHit hit : missingHits(s)) {
+            MissingRequired mr = new MissingRequired();
+            mr.setModuleId(hit.module().getId());
+            mr.setModuleCode(hit.module().getCode());
+            mr.setModuleName(nameOf(hit.module()));
+            mr.setEnvironmentId(hit.environmentId());
+            Environment env = s.envById().get(hit.environmentId());
+            mr.setEnvironmentCode(env == null ? null : env.getCode());
+            mr.setEnvironmentName(env == null
+                    ? String.valueOf(hit.environmentId()) : env.getName());
+            mr.setMissingKeys(hit.missingKeys());
+            out.missingRequired.add(mr);
         }
 
-        // 2) 模板待同步：template.updated_at > module.template_synced_at
-        for (ci.fcloud.manager.module.Module m : modules) {
+        for (Module m : s.modules()) {
             if (m.getTemplateId() == null) {
                 continue;
             }
-            ModuleTemplateInfo info = templateUpdatedAt(m.getTemplateId());
-            if (info != null && info.updatedAt() != null
-                    && (m.getTemplateSyncedAt() == null
-                    || info.updatedAt().isAfter(m.getTemplateSyncedAt()))) {
+            Template t = s.templateById().get(m.getTemplateId());
+            Instant updated = t == null ? null : t.getUpdatedAt();
+            if (updated != null && (m.getTemplateSyncedAt() == null
+                    || updated.isAfter(m.getTemplateSyncedAt()))) {
                 TemplateUpdate tu = new TemplateUpdate();
                 tu.setModuleId(m.getId());
-                tu.setModuleName(m.getName() + " (" + m.getCode() + ")");
-                tu.setTemplateId(info.id());
+                tu.setModuleName(nameOf(m));
+                tu.setTemplateId(m.getTemplateId());
                 out.templateUpdates.add(tu);
             }
         }
 
-        if (admin) {
-            // 3) 7 天内到期的 Token
-            Instant soon = Instant.now().plus(7, ChronoUnit.DAYS);
-            List<ApiToken> tokens = tokenMapper.selectList(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ApiToken>()
-                            .eq(ApiToken::getRevoked, false)
-                            .isNotNull(ApiToken::getExpiresAt)
-                            .le(ApiToken::getExpiresAt, soon)
-                            .ge(ApiToken::getExpiresAt, Instant.now()));
-            for (ApiToken t : tokens) {
+        if (SecurityUtils.isSystemAdmin()) {
+            for (ApiToken t : expiringTokens()) {
                 ExpiringToken et = new ExpiringToken();
                 et.setId(t.getId());
                 et.setName(t.getName());
@@ -127,15 +105,7 @@ public class DashboardController {
                 et.setExpiresAt(t.getExpiresAt());
                 out.expiringTokens.add(et);
             }
-
-            // 4) 最近 24h 高危操作
-            List<AuditLog> critical = auditLogMapper.selectList(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AuditLog>()
-                            .eq(AuditLog::getIsCritical, true)
-                            .ge(AuditLog::getCreatedAt, Instant.now().minus(24, ChronoUnit.HOURS))
-                            .orderByDesc(AuditLog::getCreatedAt)
-                            .last("limit 20"));
-            for (AuditLog a : critical) {
+            for (AuditLog a : criticalAudits()) {
                 CriticalAudit ca = new CriticalAudit();
                 ca.setId(a.getId());
                 ca.setAction(a.getAction());
@@ -144,64 +114,211 @@ public class DashboardController {
                 out.criticalAudits.add(ca);
             }
         }
-        // 5) 最近更新的模块（工作台底部表格；按 updated_at 倒序）
-        List<ci.fcloud.manager.module.Module> recent = moduleMapper.selectList(
-                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ci.fcloud.manager.module.Module>()
-                        .isNotNull(ci.fcloud.manager.module.Module::getUpdatedAt)
-                        .orderByDesc(ci.fcloud.manager.module.Module::getUpdatedAt)
+
+        // 最近更新的模块（工作台底部表格；按 updated_at 倒序）
+        out.recentModules.addAll(recentModules(s));
+        return ApiResponse.ok(out);
+    }
+
+    /**
+     * 侧栏角标用：只返回四个数字。
+     *
+     * <p>之前外壳直接调 /todos，等于每次进任意页面都跑一遍完整聚合（含缺值解析），
+     * 63 个应用下要 1.6s、返回 2KB 却只用其中三个数组的长度。</p>
+     */
+    @GetMapping("/todo-count")
+    public ApiResponse<TodoCount> todoCount() {
+        Snapshot s = snapshot();
+        TodoCount out = new TodoCount();
+        out.setMissingRequired(missingHits(s).size());
+        int templateUpdates = 0;
+        for (Module m : s.modules()) {
+            if (m.getTemplateId() == null) {
+                continue;
+            }
+            Template t = s.templateById().get(m.getTemplateId());
+            Instant updated = t == null ? null : t.getUpdatedAt();
+            if (updated != null && (m.getTemplateSyncedAt() == null
+                    || updated.isAfter(m.getTemplateSyncedAt()))) {
+                templateUpdates++;
+            }
+        }
+        out.setTemplateUpdates(templateUpdates);
+        out.setExpiringTokens(SecurityUtils.isSystemAdmin() ? expiringTokens().size() : 0);
+        return ApiResponse.ok(out);
+    }
+
+    // ---------------- 批量加载 ----------------
+
+    /**
+     * 一次把待办要用的数据全读出来。之前是「每模块查环境绑定 + 每模块查必填变量 +
+     * 每变量每环境跑一次解析」，模块一多就是上千条 SQL。
+     */
+    private Snapshot snapshot() {
+        List<Module> modules = moduleMapper.selectList(null);
+        List<Environment> envs = environmentMapper.selectList(null);
+        Map<Long, Environment> envById = new HashMap<>();
+        for (Environment e : envs) {
+            envById.put(e.getId(), e);
+        }
+
+        List<Long> moduleIds = modules.stream().map(Module::getId).toList();
+        Map<Long, List<Long>> boundByModule = new HashMap<>();
+        Map<Long, List<Variable>> requiredByModule = new HashMap<>();
+        if (!moduleIds.isEmpty()) {
+            for (ModuleEnv me : moduleEnvMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ModuleEnv>()
+                            .in(ModuleEnv::getModuleId, moduleIds))) {
+                boundByModule.computeIfAbsent(me.getModuleId(), k -> new ArrayList<>())
+                        .add(me.getEnvironmentId());
+            }
+            for (Variable v : variableMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Variable>()
+                            .in(Variable::getModuleId, moduleIds)
+                            .eq(Variable::getIsRequired, true))) {
+                requiredByModule.computeIfAbsent(v.getModuleId(), k -> new ArrayList<>()).add(v);
+            }
+        }
+
+        Map<Long, Template> templateById = new HashMap<>();
+        List<Long> templateIds = modules.stream().map(Module::getTemplateId)
+                .filter(Objects::nonNull).distinct().toList();
+        if (!templateIds.isEmpty()) {
+            for (Template t : templateMapper.selectBatchIds(templateIds)) {
+                templateById.put(t.getId(), t);
+            }
+        }
+
+        VariableResolver.Context ctx = variableResolver.context(
+                requiredByModule.values().stream().flatMap(List::stream).toList());
+        return new Snapshot(modules, envById, boundByModule, requiredByModule, templateById, ctx);
+    }
+
+    /** 缺必填的「模块 × 环境」命中项。解析全在内存完成。 */
+    private List<MissingHit> missingHits(Snapshot s) {
+        List<MissingHit> hits = new ArrayList<>();
+        for (Module m : s.modules()) {
+            List<Long> bound = s.boundByModule().getOrDefault(m.getId(), List.of());
+            List<Variable> required = s.requiredByModule().getOrDefault(m.getId(), List.of());
+            if (bound.isEmpty() || required.isEmpty()) {
+                continue;
+            }
+            for (Long envId : bound) {
+                List<String> missing = new ArrayList<>();
+                for (Variable v : required) {
+                    if (!s.ctx().resolve(v, m.getApplicationId(), envId, false).isFound()) {
+                        missing.add(v.getVarKey());
+                    }
+                }
+                if (!missing.isEmpty()) {
+                    hits.add(new MissingHit(m, envId, missing));
+                }
+            }
+        }
+        return hits;
+    }
+
+    private List<ApiToken> expiringTokens() {
+        Instant now = Instant.now();
+        return tokenMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ApiToken>()
+                        .eq(ApiToken::getRevoked, false)
+                        .isNotNull(ApiToken::getExpiresAt)
+                        .le(ApiToken::getExpiresAt, now.plus(7, ChronoUnit.DAYS))
+                        .ge(ApiToken::getExpiresAt, now));
+    }
+
+    private List<AuditLog> criticalAudits() {
+        return auditLogMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AuditLog>()
+                        .eq(AuditLog::getIsCritical, true)
+                        .ge(AuditLog::getCreatedAt, Instant.now().minus(24, ChronoUnit.HOURS))
+                        .orderByDesc(AuditLog::getCreatedAt)
+                        .last("limit 20"));
+    }
+
+    /** 最近更新的 6 个模块：变量数用一条 GROUP BY，应用名用一次全表（应用表很小）。 */
+    private List<RecentModule> recentModules(Snapshot s) {
+        List<Module> recent = moduleMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Module>()
+                        .isNotNull(Module::getUpdatedAt)
+                        .orderByDesc(Module::getUpdatedAt)
                         .last("limit 6"));
-        for (ci.fcloud.manager.module.Module m : recent) {
+        if (recent.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = recent.stream().map(Module::getId).toList();
+        Map<Long, Integer> varCount = new HashMap<>();
+        for (Map<String, Object> row : variableMapper.selectMaps(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<Variable>()
+                        .select("module_id", "count(*) as cnt")
+                        .in("module_id", ids)
+                        .groupBy("module_id"))) {
+            Long mid = null;
+            Integer cnt = null;
+            for (Map.Entry<String, Object> e : row.entrySet()) {
+                String k = e.getKey().toLowerCase().replace("_", "");
+                if ("moduleid".equals(k) && e.getValue() instanceof Number n) {
+                    mid = n.longValue();
+                } else if ("cnt".equals(k) && e.getValue() instanceof Number n) {
+                    cnt = n.intValue();
+                }
+            }
+            if (mid != null && cnt != null) {
+                varCount.put(mid, cnt);
+            }
+        }
+        Map<Long, Application> apps = new HashMap<>();
+        for (Application a : applicationMapper.selectList(null)) {
+            apps.put(a.getId(), a);
+        }
+
+        List<RecentModule> out = new ArrayList<>(recent.size());
+        for (Module m : recent) {
             RecentModule rm = new RecentModule();
             rm.setId(m.getId());
             rm.setCode(m.getCode());
             rm.setName(m.getName());
             rm.setShared(Boolean.TRUE.equals(m.getIsShared()));
             rm.setUpdatedAt(m.getUpdatedAt());
-            if (m.getApplicationId() != null) {
-                Application app = applicationMapper.selectById(m.getApplicationId());
-                if (app != null) {
-                    rm.setApplicationCode(app.getCode());
-                    rm.setApplicationName(app.getName());
-                }
+            Application app = m.getApplicationId() == null ? null : apps.get(m.getApplicationId());
+            if (app != null) {
+                rm.setApplicationCode(app.getCode());
+                rm.setApplicationName(app.getName());
             }
-            rm.setVariableCount(variableMapper.selectCount(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Variable>()
-                            .eq(Variable::getModuleId, m.getId())).intValue());
-            List<ModuleEnv> binds = moduleEnvMapper.selectList(
-                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ModuleEnv>()
-                            .eq(ModuleEnv::getModuleId, m.getId()));
-            rm.setEnvironmentCount(binds.size());
-            if (!binds.isEmpty()) {
-                List<Long> envIds = binds.stream().map(ModuleEnv::getEnvironmentId).toList();
-                List<Environment> bound = environmentMapper.selectBatchIds(envIds);
-                bound.sort(java.util.Comparator.comparing(
+            rm.setVariableCount(varCount.getOrDefault(m.getId(), 0));
+            List<Long> envIds = s.boundByModule().getOrDefault(m.getId(), List.of());
+            rm.setEnvironmentCount(envIds.size());
+            if (!envIds.isEmpty()) {
+                List<Environment> bound = new ArrayList<>();
+                for (Long envId : envIds) {
+                    Environment e = s.envById().get(envId);
+                    if (e != null) {
+                        bound.add(e);
+                    }
+                }
+                bound.sort(Comparator.comparingInt(
                         e -> e.getSortOrder() == null ? 0 : e.getSortOrder()));
                 rm.setEnvironments(bound.stream().map(Environment::getCode).toList());
             }
-            out.recentModules.add(rm);
+            out.add(rm);
         }
-
-        return ApiResponse.ok(out);
+        return out;
     }
 
-    // 用 JdbcTemplate 查模板 updated_at，避免与 TemplateService 循环依赖
-    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
-
-    private ModuleTemplateInfo templateUpdatedAt(Long templateId) {
-        try {
-            return jdbcTemplate.queryForObject(
-                    "SELECT id, updated_at FROM fch_template WHERE id = ?",
-                    (rs, i) -> new ModuleTemplateInfo(
-                            rs.getLong("id"),
-                            rs.getTimestamp("updated_at") == null ? null
-                                    : rs.getTimestamp("updated_at").toInstant()),
-                    templateId);
-        } catch (Exception e) {
-            return null;
-        }
+    private static String nameOf(Module m) {
+        return m.getName() + " (" + m.getCode() + ")";
     }
 
-    private record ModuleTemplateInfo(Long id, Instant updatedAt) {
+    private record Snapshot(List<Module> modules,
+                            Map<Long, Environment> envById,
+                            Map<Long, List<Long>> boundByModule,
+                            Map<Long, List<Variable>> requiredByModule,
+                            Map<Long, Template> templateById,
+                            VariableResolver.Context ctx) {
+    }
+
+    private record MissingHit(Module module, Long environmentId, List<String> missingKeys) {
     }
 
     @Data
@@ -211,6 +328,16 @@ public class DashboardController {
         private List<ExpiringToken> expiringTokens = new ArrayList<>();
         private List<CriticalAudit> criticalAudits = new ArrayList<>();
         private List<RecentModule> recentModules = new ArrayList<>();
+    }
+
+    @Data
+    public static class TodoCount {
+        /** 缺必填的「模块 × 环境」条数 */
+        private int missingRequired;
+        /** 模板待同步的模块数 */
+        private int templateUpdates;
+        /** 7 天内到期的 Token 数（非管理员恒为 0） */
+        private int expiringTokens;
     }
 
     @Data

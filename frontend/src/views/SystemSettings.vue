@@ -4,16 +4,8 @@
       <div>
         <h2 class="fc-page-title">系统管理</h2>
         <div class="fc-page-subtitle">
-          GitLab 接入用于从仓库导入应用；MCP 服务提供给 AI 客户端读写配置。
+          GitLab 接入用于从仓库导入应用；制品库存放备份；MCP 服务提供给 AI 客户端读写配置。
         </div>
-      </div>
-      <div class="ph-actions">
-        <button class="btn" :disabled="testing" @click="testConn">
-          <ProtoIcon name="sync" :size="15" />{{ testing ? '测试中…' : '测试连接' }}
-        </button>
-        <button class="btn btn-primary" :disabled="saving" @click="save">
-          {{ saving ? '保存中…' : '保存' }}
-        </button>
       </div>
     </div>
 
@@ -68,6 +60,121 @@
       </div>
       <div class="card-foot">
         <span>{{ updatedAt ? `最近更新 ${fmt(updatedAt)}` : '还没有保存过配置' }}</span>
+        <div class="foot-actions">
+          <button class="btn btn-sm" :disabled="testing" @click="testConn">
+            <ProtoIcon name="sync" :size="13" />{{ testing ? '测试中…' : '测试连接' }}
+          </button>
+          <button class="btn btn-primary btn-sm" :disabled="saving" @click="save">
+            {{ saving ? '保存中…' : '保存' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">制品库（JFrog Artifactory 兼容）</div>
+        <span v-if="artifact.enabled" class="tag tag-ok">已开启 · 备份异地留一份</span>
+        <span v-else class="tag tag-plain">未开启</span>
+      </div>
+      <div class="card-body gcfg">
+        <div class="mcp-row">
+          <div class="mcp-info">
+            <span class="mcp-name">上传备份到制品库</span>
+            <span class="mcp-desc">
+              每份备份在本地生成成功后，再用 Artifactory 的 deploy 接口推一份；本地副本始终保留
+            </span>
+          </div>
+          <span class="mcp-impact">{{ artifact.enabled ? '开启' : '关闭' }}</span>
+          <el-switch v-model="artifact.enabled" />
+        </div>
+
+        <label class="fld">
+          <span class="fld-lb">
+            Artifactory 地址
+            <span class="fld-opt">到域名或上下文根为止，不要带 /artifactory</span>
+          </span>
+          <el-input
+            v-model="artifact.baseUrl"
+            class="k-input"
+            placeholder="https://gitee.corp.com"
+            @blur="artifact.baseUrl = artifact.baseUrl.trim()"
+          />
+        </label>
+
+        <div class="artifact-grid">
+          <label class="fld">
+            <span class="fld-lb">仓库 Key<span class="fld-opt">宿主仓库，如 xxx-local</span></span>
+            <el-input
+              v-model="artifact.repo"
+              class="k-input"
+              placeholder="fcloud-backups-local"
+              @blur="artifact.repo = artifact.repo.trim()"
+            />
+          </label>
+          <label class="fld">
+            <span class="fld-lb">目录<span class="fld-opt">仓库内的存放路径</span></span>
+            <el-input
+              v-model="artifact.dir"
+              class="k-input"
+              placeholder="fcloud-backups"
+            />
+          </label>
+        </div>
+
+        <div class="artifact-grid">
+          <label class="fld">
+            <span class="fld-lb">用户名<span class="fld-opt">选填，填了就走 Basic 认证</span></span>
+            <el-input
+              v-model="artifact.username"
+              class="k-input"
+              placeholder="留空则用 Bearer"
+            />
+          </label>
+          <label class="fld">
+            <span class="fld-lb">
+              Token
+              <span class="fld-opt">
+                {{ artifact.tokenPreview ? `当前 ${artifact.tokenPreview}，留空不改` : '部署令牌 / API Key' }}
+              </span>
+            </span>
+            <el-input
+              v-model="artifact.token"
+              type="password"
+              show-password
+              class="k-input"
+              autocomplete="new-password"
+              :placeholder="artifact.hasToken ? '留空表示保持现有令牌' : '粘贴部署令牌'"
+            />
+          </label>
+        </div>
+
+        <span class="fld-hint">
+          上传走 <code>PUT /artifactory/{仓库}/{目录}/{文件名}</code>，清单走
+          <code>/api/storage</code>。令牌用主密钥加密后落库，接口只返回尾 4 位；单文件上限
+          {{ artifact.maxUploadMb }} MB（Artifactory 本身不限，这里只做兜底）。
+        </span>
+        <div class="callout">
+          <ProtoIcon name="alert" :size="13" class="c-ic" />
+          <span>
+            备份页会多出「制品库」列和恢复来源选项。制品库只保留最近
+            {{ backupRetain }} 份，与本地保留份数一致；超出部分自动删除。
+          </span>
+        </div>
+      </div>
+      <div class="card-foot">
+        <span>
+          {{ artifact.updatedAt ? `最近更新 ${fmt(artifact.updatedAt)}` : '还没有保存过配置' }}
+          <span v-if="artifactConn" class="tag tag-ok foot-tag">{{ artifactConn }}</span>
+        </span>
+        <div class="foot-actions">
+          <button class="btn btn-sm" :disabled="artifactTesting" @click="testArtifact">
+            <ProtoIcon name="sync" :size="13" />{{ artifactTesting ? '测试中…' : '测试连接' }}
+          </button>
+          <button class="btn btn-primary btn-sm" :disabled="artifactSaving" @click="saveArtifact">
+            {{ artifactSaving ? '保存中…' : '保存' }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -317,6 +424,91 @@ async function saveMcp() {
   }
 }
 
+// ---------------- 制品库（JFrog Artifactory 兼容） ----------------
+interface ArtifactVO {
+  enabled: boolean
+  baseUrl?: string | null
+  username?: string | null
+  repo?: string | null
+  dir: string
+  hasToken: boolean
+  tokenPreview?: string | null
+  updatedAt?: string | null
+  maxUploadMb: number
+  retain: number
+}
+
+const artifact = reactive({
+  enabled: false,
+  baseUrl: '',
+  username: '',
+  repo: '',
+  dir: 'fcloud-backups',
+  token: '',
+  hasToken: false,
+  tokenPreview: null as string | null,
+  updatedAt: null as string | null,
+  maxUploadMb: 2048
+})
+const backupRetain = ref(3)
+const artifactSaving = ref(false)
+const artifactTesting = ref(false)
+const artifactConn = ref('')
+
+async function loadArtifact() {
+  const d = await api.get<ArtifactVO>('/api/console/admin/settings/artifact')
+  artifact.enabled = d.enabled
+  artifact.baseUrl = d.baseUrl || ''
+  artifact.username = d.username || ''
+  artifact.repo = d.repo || ''
+  artifact.dir = d.dir || 'fcloud-backups'
+  artifact.hasToken = d.hasToken
+  artifact.tokenPreview = d.tokenPreview || null
+  artifact.updatedAt = d.updatedAt || null
+  artifact.maxUploadMb = d.maxUploadMb
+  backupRetain.value = d.retain
+  artifact.token = ''
+}
+
+async function saveArtifact() {
+  if (artifact.enabled && (!artifact.baseUrl.trim() || !artifact.repo.trim())) {
+    ElMessage.warning('开启后 Artifactory 地址与仓库 Key 必填')
+    return
+  }
+  artifactSaving.value = true
+  try {
+    await api.put('/api/console/admin/settings/artifact', {
+      enabled: artifact.enabled,
+      baseUrl: artifact.baseUrl.trim(),
+      username: artifact.username.trim(),
+      repo: artifact.repo.trim(),
+      dir: artifact.dir.trim() || 'fcloud-backups',
+      // 空表示不修改，避免把脱敏回显覆盖成真 token
+      token: artifact.token.trim() || null
+    })
+    ElMessage.success('已保存')
+    await loadArtifact()
+  } finally {
+    artifactSaving.value = false
+  }
+}
+
+async function testArtifact() {
+  artifactTesting.value = true
+  artifactConn.value = ''
+  try {
+    const d = await api.post<{ repo: string; dir: string; fileCount: number }>(
+      '/api/console/admin/settings/artifact/test'
+    )
+    artifactConn.value = `${d.repo} · ${d.fileCount} 个备份`
+    ElMessage.success(`连接成功：${d.repo}`)
+  } catch {
+    // 错误信息已由拦截器提示
+  } finally {
+    artifactTesting.value = false
+  }
+}
+
 function fmt(v: string) {
   return new Date(v).toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
 }
@@ -367,6 +559,7 @@ async function testConn() {
 onMounted(() => {
   load()
   loadMcp()
+  loadArtifact()
 })
 </script>
 
@@ -377,6 +570,17 @@ onMounted(() => {
   gap: 16px;
   max-width: 640px;
 }
+
+.artifact-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 14px;
+}
+
+.foot-tag {
+  margin-left: 8px;
+}
+
 
 .fld {
   display: flex;

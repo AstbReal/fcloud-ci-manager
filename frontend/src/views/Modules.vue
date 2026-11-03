@@ -4,7 +4,7 @@
       <div>
         <h2 class="fc-page-title">模块</h2>
         <div class="fc-page-subtitle">
-          所有应用与共享模块库中的配置单元；点一行进入变量矩阵。
+          按应用聚合，一行一个应用；点模块 chip 进入变量矩阵。
         </div>
       </div>
       <div class="ph-actions">
@@ -17,46 +17,31 @@
     <div class="filters">
       <label class="field search-field">
         <ProtoIcon name="search" :size="14" style="color: #8b93a1" />
-        <input v-model="q" placeholder="搜模块名 / code" />
+        <input v-model="q" placeholder="搜应用 / 模块名 / code" />
       </label>
 
-      <el-dropdown trigger="click" @command="setApp">
-        <button class="field">
-          <span class="muted">应用</span>
-          <b>{{ appLabel }}</b>
-          <ProtoIcon name="chevron" :size="13" style="color: #8b93a1" />
-        </button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="">全部应用</el-dropdown-item>
-            <el-dropdown-item command="__shared">共享模块库</el-dropdown-item>
-            <el-dropdown-item v-for="a in apps" :key="a.id" :command="String(a.id)">
-              {{ a.code }}
-            </el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
+      <FilterSelect
+        :model-value="appFilter"
+        label="应用"
+        all-label="全部应用"
+        :options="appOptions"
+        @update:model-value="setApp"
+      />
 
-      <el-dropdown trigger="click" @command="(v: string) => (groupFilter = v)">
-        <button class="field">
-          <span class="muted">分组</span>
-          <b>{{ groupLabel }}</b>
-          <ProtoIcon name="chevron" :size="13" style="color: #8b93a1" />
-        </button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="">全部分组</el-dropdown-item>
-            <el-dropdown-item command="__none">未分组</el-dropdown-item>
-            <el-dropdown-item v-for="g in groupOptions" :key="g" :command="g">
-              {{ g }}
-            </el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
+      <FilterSelect
+        v-model="groupFilter"
+        label="分组"
+        all-label="全部分组"
+        :options="groupFilterOptions"
+      />
 
       <button class="btn btn-ghost btn-sm manage-groups" @click="openGroupDialog">
         <ProtoIcon name="sliders" :size="14" />管理分组
       </button>
+
+      <span class="filter-stat">
+        {{ groups.length }} 个应用 · {{ filtered.length }} 个模块
+      </span>
     </div>
 
     <div class="card">
@@ -64,43 +49,90 @@
         <table>
           <thead>
             <tr>
+              <th style="width: 260px">应用</th>
               <th>模块</th>
-              <th style="width: 190px">所属应用</th>
-              <th style="width: 110px">分组</th>
-              <th style="width: 80px">变量</th>
-              <th style="width: 80px">环境</th>
-              <th style="width: 150px">更新时间</th>
-              <th style="width: 140px">操作</th>
+              <th style="width: 130px">最近更新</th>
+              <th style="width: 80px"></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="m in filtered" :key="m.id" @click="open(m)">
-              <td>
-                <span class="mono t-strong">{{ m.code }}</span>
-                <span v-if="m.isShared" class="tag tag-shared">共享</span>
-                <div class="m-name">{{ m.name }}</div>
-              </td>
-              <td class="mono muted">{{ m.applicationCode || '共享模块库' }}</td>
-              <td>
-                <span v-if="m.groupName" class="tag tag-plain">{{ m.groupName }}</span>
-                <span v-else class="muted">—</span>
-              </td>
-              <td class="num">{{ m.variableCount }}</td>
-              <td class="num">{{ m.environmentCount }}</td>
-              <td class="muted">{{ relative(m.updatedAt) }}</td>
-              <td @click.stop>
-                <button class="btn btn-ghost btn-sm" @click="openEdit(m)">编辑</button>
-                <button
-                  v-if="isAdmin"
-                  class="btn btn-ghost btn-sm danger"
-                  @click="remove(m)"
-                >
-                  删除
-                </button>
-              </td>
-            </tr>
-            <tr v-if="!filtered.length">
-              <td colspan="7" class="empty-row">
+            <template v-for="g in groups" :key="g.key">
+              <tr class="app-row" :class="{ 'is-open': isOpen(g.key) }" @click="toggle(g.key)">
+                <td>
+                  <div class="app-cell">
+                    <span class="chev" :class="{ open: isOpen(g.key) }">
+                      <ProtoIcon name="chevron" :size="13" />
+                    </span>
+                    <div class="app-main">
+                      <div class="app-code">
+                        <span class="mono t-strong">{{ g.code }}</span>
+                        <span v-if="g.isShared" class="tag tag-shared">共享</span>
+                      </div>
+                      <div class="app-name">{{ g.name }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td class="chips-cell">
+                  <div class="chips">
+                    <button
+                      v-for="m in g.modules"
+                      :key="m.id"
+                      type="button"
+                      class="chip"
+                      :title="chipTitle(m)"
+                      @click.stop="open(m)"
+                    >
+                      <span class="chip-code mono">{{ m.code }}</span>
+                      <span class="chip-n" :class="{ zero: !m.variableCount }">
+                        {{ m.variableCount }} 变量
+                      </span>
+                    </button>
+                  </div>
+                </td>
+                <td class="muted">{{ relative(g.updatedAt) }}</td>
+                <td class="row-act" @click.stop>
+                  <button class="btn btn-ghost btn-sm" @click="toggle(g.key)">
+                    {{ isOpen(g.key) ? '收起' : '明细' }}
+                  </button>
+                </td>
+              </tr>
+
+              <tr v-if="isOpen(g.key)" class="detail-row">
+                <td colspan="4">
+                  <div class="detail">
+                    <div v-for="m in g.modules" :key="m.id" class="mod-line">
+                      <button type="button" class="mod-id" @click="open(m)">
+                        <span class="mono t-strong">{{ m.code }}</span>
+                        <span class="mod-name">{{ m.name }}</span>
+                      </button>
+                      <span class="mod-grp">
+                        <span v-if="m.groupName" class="tag tag-plain">{{ m.groupName }}</span>
+                        <span v-else class="muted">未分组</span>
+                      </span>
+                      <span class="mod-meta">
+                        {{ m.variableCount }} 变量 · {{ m.environmentCount }} 环境
+                      </span>
+                      <span class="mod-meta">{{ relative(m.updatedAt) }}</span>
+                      <span class="mod-act">
+                        <button class="btn btn-ghost btn-sm" @click.stop="openEdit(m)">
+                          编辑
+                        </button>
+                        <button
+                          v-if="isAdmin"
+                          class="btn btn-ghost btn-sm danger"
+                          @click.stop="remove(m)"
+                        >
+                          删除
+                        </button>
+                      </span>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
+
+            <tr v-if="!groups.length">
+              <td colspan="4" class="empty-row">
                 没有匹配的模块，试试换个关键词或应用。
               </td>
             </tr>
@@ -140,7 +172,7 @@
       :module="editing"
       :environments="envs"
       :apps="apps"
-      :groups="groupOptions"
+      :groups="groupNames"
       @saved="load"
     />
   </div>
@@ -154,6 +186,7 @@ import { useUserStore } from '@/stores/user'
 import { api } from '@/api/http'
 import { envApi, type Env } from '@/api'
 import ProtoIcon from '@/components/ProtoIcon.vue'
+import FilterSelect from '@/components/FilterSelect.vue'
 import ModuleFormDrawer from '@/components/ModuleFormDrawer.vue'
 import type { Id } from '@/types/id'
 
@@ -166,8 +199,18 @@ interface ModuleRow {
   groupName?: string
   applicationId?: Id
   applicationCode?: string
+  applicationName?: string
   variableCount: number
   environmentCount: number
+  updatedAt?: string
+}
+
+interface AppGroupRow {
+  key: string
+  code: string
+  name: string
+  isShared: boolean
+  modules: ModuleRow[]
   updatedAt?: string
 }
 
@@ -184,24 +227,25 @@ const groupDialog = ref(false)
 const formOpen = ref(false)
 const formAppId = ref<Id | undefined>()
 const editing = ref<ModuleRow | null>(null)
+const expandedKeys = ref<string[]>([])
 
-const appLabel = computed(() => {
-  if (!appFilter.value) return '全部'
-  if (appFilter.value === '__shared') return '共享模块库'
-  return apps.value.find((a) => String(a.id) === appFilter.value)?.code || '全部'
-})
+const appOptions = computed(() => [
+  { value: '__shared', label: '共享模块库' },
+  ...apps.value.map((a) => ({ value: String(a.id), label: a.code }))
+])
 
-const groupLabel = computed(() =>
-  groupFilter.value === '__none' ? '未分组' : groupFilter.value || '全部'
-)
-
-const groupOptions = computed(() => {
+const groupNames = computed(() => {
   const set = new Set<string>()
   for (const m of modules.value) {
     if (m.groupName) set.add(m.groupName)
   }
-  return Array.from(set)
+  return Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-CN'))
 })
+
+const groupFilterOptions = computed(() => [
+  { value: '__none', label: '未分组' },
+  ...groupNames.value.map((g) => ({ value: g, label: g }))
+])
 
 const dialogGroups = computed(() => {
   const map = new Map<string, { count: number; apps: Set<string> }>()
@@ -234,10 +278,67 @@ const filtered = computed(() =>
     return (
       m.code.toLowerCase().includes(kw) ||
       (m.name || '').toLowerCase().includes(kw) ||
-      (m.applicationCode || '').toLowerCase().includes(kw)
+      (m.applicationCode || '').toLowerCase().includes(kw) ||
+      (m.applicationName || '').toLowerCase().includes(kw)
     )
   })
 )
+
+/**
+ * 按应用聚合成行：180 个模块压成 60 行，build / scc / image 变成行内 chip，
+ * 不再是重复 60 次的同一段文字。
+ */
+const groups = computed<AppGroupRow[]>(() => {
+  const order = new Map<string, number>()
+  apps.value.forEach((a, i) => order.set(String(a.id), i))
+
+  const map = new Map<string, AppGroupRow>()
+  for (const m of filtered.value) {
+    const key = m.isShared ? '__shared' : String(m.applicationId ?? '__orphan')
+    let g = map.get(key)
+    if (!g) {
+      g = {
+        key,
+        code: m.isShared ? '共享模块库' : m.applicationCode || '未归属应用',
+        name: m.isShared ? '跨应用共享，改动实时同步' : m.applicationName || '',
+        isShared: !!m.isShared,
+        modules: [],
+        updatedAt: undefined
+      }
+      map.set(key, g)
+    }
+    g.modules.push(m)
+    if (m.updatedAt && (!g.updatedAt || Date.parse(m.updatedAt) > Date.parse(g.updatedAt))) {
+      g.updatedAt = m.updatedAt
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.isShared !== b.isShared) return a.isShared ? -1 : 1
+    const ai = order.get(a.key) ?? Number.MAX_SAFE_INTEGER
+    const bi = order.get(b.key) ?? Number.MAX_SAFE_INTEGER
+    if (ai !== bi) return ai - bi
+    return a.code.localeCompare(b.code, 'zh-CN')
+  })
+})
+
+function isOpen(key: string) {
+  return expandedKeys.value.includes(key)
+}
+
+function toggle(key: string) {
+  const i = expandedKeys.value.indexOf(key)
+  if (i >= 0) expandedKeys.value.splice(i, 1)
+  else expandedKeys.value.push(key)
+}
+
+function chipTitle(m: ModuleRow) {
+  return [
+    m.name,
+    m.groupName ? `分组 ${m.groupName}` : '未分组',
+    `${m.variableCount} 个变量 · ${m.environmentCount} 个环境`
+  ].join(' · ')
+}
 
 function relative(v?: string) {
   if (!v) return '—'
@@ -258,7 +359,9 @@ function open(m: ModuleRow) {
 }
 
 function openCreate() {
-  formAppId.value = undefined
+  formAppId.value = appFilter.value && appFilter.value !== '__shared'
+    ? appFilter.value
+    : undefined
   editing.value = null
   formOpen.value = true
 }
@@ -290,6 +393,7 @@ async function remove(m: ModuleRow) {
 function setApp(v: string) {
   appFilter.value = v
   groupFilter.value = ''
+  expandedKeys.value = []
 }
 
 function openGroupDialog() {
@@ -335,12 +439,19 @@ async function load() {
 }
 
 onMounted(async () => {
+  // 三个接口并行取、一次性赋值：模块先到、应用后到会导致分组顺序先按 code 排一遍
+  // 再重排一次，页面上能看到行序跳动。
   try {
-    await load()
-    apps.value = await api.get<Array<{ id: Id; code: string; name: string }>>(
-      '/api/console/admin/applications'
-    )
-    envs.value = await envApi.list()
+    const [m, a, e] = await Promise.all([
+      api.get<ModuleRow[]>('/api/console/admin/modules'),
+      api.get<Array<{ id: Id; code: string; name: string }>>(
+        '/api/console/admin/applications'
+      ),
+      envApi.list()
+    ])
+    modules.value = m
+    apps.value = a
+    envs.value = e
   } catch {
     // 接口未就绪时保留空态，不阻塞页面
   }
@@ -357,7 +468,7 @@ onMounted(async () => {
 }
 
 .search-field {
-  width: 240px;
+  width: 260px;
   gap: 7px;
 }
 
@@ -376,12 +487,6 @@ onMounted(async () => {
   color: var(--text-3);
 }
 
-.field b {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--text);
-}
-
 .filters {
   display: flex;
   align-items: center;
@@ -392,6 +497,13 @@ onMounted(async () => {
 
 .manage-groups {
   margin-left: 2px;
+}
+
+.filter-stat {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 
 .group-list {
@@ -452,7 +564,7 @@ onMounted(async () => {
 
 table {
   width: 100%;
-  min-width: 750px;
+  min-width: 720px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -481,16 +593,193 @@ td {
   text-overflow: ellipsis;
 }
 
-tbody tr {
+tbody tr.app-row {
   cursor: pointer;
 }
 
-tbody tr:last-child td {
+tbody tr:last-child td,
+tbody tr.detail-row:last-child td {
   border-bottom: 0;
 }
 
-tbody tr:hover td {
+tbody tr.app-row:hover td {
   background: #fbfcfe;
+}
+
+tbody tr.app-row.is-open td {
+  background: #fbfcfe;
+  border-bottom-color: transparent;
+}
+
+.app-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chev {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-3);
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease;
+  flex: 0 0 16px;
+}
+
+.chev.open {
+  transform: rotate(0deg);
+  color: var(--text-2);
+}
+
+.app-main {
+  min-width: 0;
+}
+
+.app-code {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-name {
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chips-cell {
+  height: auto;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: var(--surface);
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+}
+
+.chip:hover {
+  border-color: var(--primary);
+  background: var(--primary-50);
+  box-shadow: 0 1px 2px rgba(30, 64, 175, 0.08);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.chip-code {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1;
+}
+
+.chip-n {
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip-n.zero {
+  color: var(--text-3);
+  opacity: 0.65;
+}
+
+.row-act {
+  text-align: right;
+}
+
+.detail-row td {
+  padding: 0 12px 10px 12px;
+  background: #fbfcfe;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-left: 22px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+.mod-line {
+  display: grid;
+  grid-template-columns: minmax(180px, 340px) 130px 160px 110px auto;
+  gap: 12px;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+}
+
+.mod-line:hover {
+  background: var(--surface-3);
+}
+
+.mod-id {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.mod-id:hover .mono {
+  color: var(--primary-700);
+}
+
+.mod-name {
+  font-size: 11.5px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mod-meta {
+  font-size: 12px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.mod-act {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  padding-right: 2px;
 }
 
 .mono {
@@ -501,12 +790,6 @@ tbody tr:hover td {
 .t-strong {
   font-weight: 500;
   color: var(--text);
-}
-
-.m-name {
-  margin-top: 1px;
-  font-size: 11.5px;
-  color: var(--text-3);
 }
 
 .muted {
