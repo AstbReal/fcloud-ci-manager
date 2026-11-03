@@ -1,0 +1,35 @@
+package ci.fcloud.manager.common;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * 统一响应包装：{ code: 0, message: "ok", data: ... }
+ */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class ApiResponse<T> {
+
+    /** 0 = 成功；非 0 = 业务错误码 */
+    private int code;
+    private String message;
+    private T data;
+
+    public static <T> ApiResponse<T> ok(T data) {
+        return new ApiResponse<>(0, "ok", data);
+    }
+
+    public static <T> ApiResponse<T> ok() {
+        return new ApiResponse<>(0, "ok", null);
+    }
+
+    public static <T> ApiResponse<T> error(int code, String message) {
+        return new ApiResponse<>(code, message, null);
+    }
+
+    public static <T> ApiResponse<T> unauthorized(String message) {
+        return new ApiResponse<>(40100, message, null);
+    }
+}

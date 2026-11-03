@@ -4,7 +4,7 @@ plugins {
     id 'java'
 }
 
-group = 'ci.fcloud.hub'
+group = 'ci.fcloud.manager'
 version = '1.0.0'
 
 // Jackson 版本整体抬到 2.15.x：镜像安全扫描要求 jackson-dataformat-toml ≥ 2.15.0。

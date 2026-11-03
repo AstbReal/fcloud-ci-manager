@@ -39,8 +39,8 @@ fcloud-ci-manager/
 │   ├── build.gradle             # Spring Boot 2.7.17，Java 17
 │   ├── settings.gradle
 │   ├── gradlew / gradlew.bat    # Gradle 7.5.1 wrapper（已锁定版本）
-│   ├── src/main/java/ci/fcloud/hub/
-│   │   ├── FcloudCiHubApplication.java
+│   ├── src/main/java/ci/fcloud/manager/
+│   │   ├── FcloudCiManagerApplication.java
 │   │   ├── config/              # Security/OAuth2/Web/OpenAPI/Async/Properties
 │   │   ├── common/              # ApiResponse/异常/Crypto/Audited 注解
 │   │   ├── auth/                # JWT/Cookie/OAuth SuccessHandler
@@ -238,7 +238,7 @@ docker compose -f .ci/docker-compose.yml up -d
 ### M1 验证记录
 
 - `./backend/gradlew -p backend compileJava` → BUILD SUCCESSFUL（Gradle 7.5.1，Java 17）
-- `./backend/gradlew -p backend bootRun` → `Started FcloudCiHubApplication in 3.568 seconds`
+- `./backend/gradlew -p backend bootRun` → `Started FcloudCiManagerApplication in 3.568 seconds`
 - Flyway → `Successfully validated 1 migration`，`Schema "public" is up to date`
 - 数据库表 → 17 张业务表 + `fch_flyway_schema_history` 全部创建（version=1, success=t）
 - actuator → `/actuator/health` 返回 200

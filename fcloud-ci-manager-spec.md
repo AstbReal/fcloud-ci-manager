@@ -732,8 +732,8 @@ fcloud-ci-manager/
 │   ├── build.gradle             # Spring Boot 2.7.17，Java 17
 │   ├── settings.gradle
 │   ├── gradlew / gradlew.bat
-│   ├── src/main/java/ci/fcloud/hub/
-│   │   ├── FcloudCiHubApplication.java
+│   ├── src/main/java/ci/fcloud/manager/
+│   │   ├── FcloudCiManagerApplication.java
 │   │   ├── config/              # Security/OAuth2/Redis/Web/OpenAPI/Properties
 │   │   ├── common/              # ApiResponse/异常/Crypto/Audited 注解
 │   │   ├── auth/                # JWT/Cookie/OAuth SuccessHandler

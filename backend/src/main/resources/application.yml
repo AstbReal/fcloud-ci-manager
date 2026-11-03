@@ -168,8 +168,8 @@ springdoc:
 logging:
   level:
     root: INFO
-    ci.fcloud.hub: INFO
-    ci.fcloud.hub.auth.OAuth2LoginSuccessHandler: INFO
+    ci.fcloud.manager: INFO
+    ci.fcloud.manager.auth.OAuth2LoginSuccessHandler: INFO
   # 应用日志双写：console（docker logs / kubectl logs 可见）+ 文件（落数据卷，
   # Pod 重建后仍可查）。容器内没有 logrotate，轮转由 Logback 自己做。
   # 镜像里由 entrypoint 注入绝对路径 ${data-root}/logs/app.log；
