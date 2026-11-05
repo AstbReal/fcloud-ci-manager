@@ -582,11 +582,6 @@ onMounted(load)
   color: var(--primary);
 }
 
-.head-note {
-  font-size: 11.5px;
-  color: var(--text-3);
-}
-
 .ghost-btn {
   border: 0;
   background: none;
@@ -746,28 +741,6 @@ onMounted(load)
 
 .recent-table tr.clickable:hover td {
   background: #fbfcfe;
-}
-
-.rt-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 500;
-}
-
-.rt-code {
-  margin-top: 1px;
-  font-size: 11px;
-  color: var(--text-3);
-}
-
-.rt-arrow {
-  color: var(--text-3);
-  text-align: right;
-}
-
-.recent-table tr:hover .rt-arrow {
-  color: var(--primary);
 }
 
 .num {

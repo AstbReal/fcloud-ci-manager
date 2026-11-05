@@ -101,12 +101,15 @@ ModuleMember：用户 × 模块 → MODULE_ADMIN / MODULE_OPERATOR
 
 ### 2.5 模板规则
 
-- 模板 = 变量定义集合，**仅系统管理员**可维护；字段：key、类型、备注、默认值、是否必填、排序
+- 模板 = **变量定义 + 文件定义**，**仅系统管理员**可维护；变量字段：key、类型、备注、默认值、是否必填、排序；文件字段：fileKey、内容、备注
 - 模块通过 `template_id` **保持关联**；`template.updated_at > module.template_synced_at` 时 UI 显示"有更新"徽标
-- 实例化：复制定义到模块变量；**明文默认值写入 global_value，加密类型的默认值不落库**
-- **diff 式选择性同步**：新增（勾选引入）/ 定义变更（类型/备注/必填，勾选采纳）/ 模板已删除（二选：删除模块变量 或 保留为模块自有变量）
-- **同步永远不覆盖已填的值**
-- 支持"从现有模块另存为模板"
+- 实例化：复制定义到模块变量/文件；**明文默认值写入 global_value，加密类型的默认值不落库**；文件复制到模块已绑定的每个环境
+- **既有私有模块可以绑定/解绑模板**：绑定只补缺失 key，模块已有的同名变量/文件保留自有（`origin = MODULE`），不会被覆盖；解绑默认保留已下发内容（`origin` 改回 MODULE），可选删除
+- **共享模块禁止绑定模板**：共享是引用制（订阅方实时跟随），模板是私有快照 + 显式同步，两者语义不同
+- **diff 式选择性同步**：变量新增（勾选引入）/ 定义变更（类型/备注/必填，勾选采纳）/ 模板已删除（二选：删除 或 保留为模块自有）；文件新增/更新自动对齐，模板已删除的文件按同样二选处理
+- 只有 `origin = TEMPLATE` 的行参与 diff / 同步；**同步永远不覆盖已填的值**
+- 模块里的模板副本用 `origin = TEMPLATE` 标记；用户手动上传同名文件即接管为 `MODULE`，后续模板同步不再覆盖
+- 支持"从现有模块另存为模板"（仅变量定义）
 
 ---
 
@@ -296,6 +299,29 @@ CREATE TABLE fch_template_var (
   sort_order    INT NOT NULL DEFAULT 0,
   UNIQUE (template_id, var_key)
 );
+
+-- 14.1 模板文件定义（V10）
+CREATE TABLE fch_template_file (
+  id            BIGINT PRIMARY KEY,
+  template_id   BIGINT NOT NULL REFERENCES fch_template(id) ON DELETE CASCADE,
+  file_key      VARCHAR(255) NOT NULL,
+  remark        VARCHAR(512),
+  storage_path  VARCHAR(1024) NOT NULL,
+  original_name VARCHAR(512) NOT NULL,
+  mime_type     VARCHAR(255),
+  size          BIGINT NOT NULL,
+  sha256        VARCHAR(64),
+  created_by    BIGINT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (template_id, file_key)
+);
+
+-- 14.2 来源标记（V10）：变量 / 文件
+--   fch_variable.origin VARCHAR(16) NOT NULL DEFAULT 'MODULE'
+--   fch_file.origin     VARCHAR(16) NOT NULL DEFAULT 'MODULE'
+--   fch_file_version.sha256 VARCHAR(64)
+-- MODULE = 模块自有；TEMPLATE = 模板下发。diff/同步只处理 TEMPLATE。
 
 -- 15. 审计日志（保留 7 天）
 CREATE TABLE fch_audit_log (
@@ -506,9 +532,17 @@ GET /api/v1/pipeline/files/{moduleId}/{fileId}?version=3
 | PUT    | `/templates/{id}`                | 改（带 vars 全量保存）                                                                    |
 | DELETE | `/templates/{id}`                | 删（模块 template_id 置空）                                                              |
 | POST   | `/templates/{id}/instantiate`    | `{applicationId, code, name}`                                                     |
-| GET    | `/modules/{id}/template-diff`    | `{added, changed, removed}`                                                       |
-| POST   | `/modules/{id}/template-sync`    | `{acceptAdded:[], acceptChanged:[], removedKeys:[], removedAction: DELETE\|KEEP}` |
-| POST   | `/modules/{id}/save-as-template` | `{code, name}` 从模块反哺模板                                                            |
+| GET    | `/modules/{id}/template-diff`    | `{added, changed, removed, conflicts, files, removedFiles}`；只比对模板来源项                |
+| POST   | `/modules/{id}/template-sync`    | `{acceptAdded:[], acceptChanged:[], removedKeys:[], removedFileKeys:[], removedAction: DELETE\|KEEP}` |
+| POST   | `/modules/{id}/save-as-template` | `{code, name}` 从模块反哺模板（仅变量）                                                          |
+| GET    | `/modules/{id}/template-preview?templateId=` | 绑定前预览：新增/冲突/文件状态                                                  |
+| POST   | `/modules/{id}/template-bind`    | `{templateId}` 绑定已有私有模块；同名项保留自有                                          |
+| POST   | `/modules/{id}/template-unbind`  | `{deleteContent:false}` 解绑；默认保留内容                                         |
+| POST   | `/templates/{id}/files`          | multipart：`file, fileKey, remark?` 上传/替换模板文件                                  |
+| DELETE | `/templates/{id}/files/{fileId}` | 删除模板文件                                                                           |
+| POST   | `/templates/{id}/bind-preview`   | `{moduleCode, applicationIds?}` 批量绑定预览                                       |
+| POST   | `/templates/{id}/bind-batch`     | `{moduleCode, applicationIds?}` 批量绑定已有模块                                    |
+| GET    | `/templates/{id}/bindings`       | 已绑定模块清单（应用 / 模块 / 上次同步时间 / 是否待同步）                            |
 
 ### 5.9 Token / 审计 / 访问日志 / 备份 / 工作台
 

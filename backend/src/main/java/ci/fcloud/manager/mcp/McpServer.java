@@ -85,10 +85,6 @@ public class McpServer {
         };
     }
 
-    public int toolCount() {
-        return registry.size();
-    }
-
     // ---------------- 方法实现 ----------------
 
     private JsonNode initialize(JsonNode id, JsonNode req) {

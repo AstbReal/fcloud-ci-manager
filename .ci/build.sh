@@ -55,26 +55,15 @@ fi
 
 TAG="${1:-fcloud-ci-manager:latest}"
 
-# pnpm 版本由 frontend/package.json 的 packageManager 字段锁定，corepack 按它取版本；
-# 不依赖全局安装，也不会退回 npm 绕开 pnpm-lock。
-pnpm_run() {
-  if command -v pnpm >/dev/null 2>&1; then
-    pnpm "$@"
-  elif command -v corepack >/dev/null 2>&1; then
-    # --pm-on-fail=ignore：没执行过 corepack enable 时，pnpm 会因 packageManager
-    # 版本校验拒绝执行；这里显式放行（corepack 仍会按 packageManager 取对应版本）
-    corepack pnpm --pm-on-fail=ignore "$@"
-  else
-    echo "!! 未找到 pnpm / corepack：需要 Node 18+，并执行 corepack enable pnpm" >&2
-    exit 1
-  fi
-}
+if ! command -v npm >/dev/null 2>&1; then
+  echo "!! 未找到 npm：需要 Node 18+（自带 npm）" >&2
+  exit 1
+fi
 
-echo "==> [1/4] 构建前端（pnpm）"
-# 非交互环境下 pnpm 清理 node_modules 会要求 TTY 确认，CI=true 让它直接执行
+echo "==> [1/4] 构建前端（npm）"
 export CI=true
-pnpm_run --dir frontend install --frozen-lockfile --config.confirmModulesPurge=false
-pnpm_run --dir frontend run build
+npm --prefix frontend ci --no-audit --no-fund
+npm --prefix frontend run build
 
 echo "==> [2/4] 收集前端产物到 .ci/frontend-dist"
 rm -rf .ci/frontend-dist

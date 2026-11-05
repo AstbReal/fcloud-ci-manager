@@ -91,12 +91,10 @@ cd backend && ./gradlew bootRun
 ### 3.3 启动前端
 
 ```bash
-cd frontend && pnpm install && pnpm run dev
+cd frontend && npm install && npm run dev
 ```
 
-包管理器固定为 pnpm（`frontend/package.json` 的 `packageManager` 字段锁版本，
-`pnpm-lock.yaml` 是唯一依赖事实源）。没装 pnpm 时先 `corepack enable pnpm`，
-或用 `corepack pnpm --pm-on-fail=ignore`。Node 需要 18+（Vite 5 要求），推荐 20/22 LTS。
+包管理器使用 npm，`package-lock.json` 是唯一依赖事实源。Node 需要 18+（Vite 5 要求），推荐 20/22 LTS。
 
 Vite 代理 `/api`、`/oauth2`、`/oauth` → `http://localhost:8080`。
 
@@ -192,6 +190,7 @@ docker compose -f .ci/docker-compose.yml up -d
 | --- | --- | --- | --- |
 | D1 | `.ci/docker-compose.dev.yml` 的镜像 tag | 只用 `postgres:16-alpine` | 本地已有的镜像，不额外拉取；生产镜像内跟随 Alpine 走 18（D27），SQL 兼容 |
 | D27 | 生产镜像里的 PG 大版本 | 不钉版本，跟随 Alpine 的 `postgresql` 元包（当前 18.4）；本地开发依赖仍是 `postgres:16-alpine` | 钉 16 需要 Alpine community 仓库、且要重建 base；业务 SQL 只用标准 DDL/DML，18 兼容。风险：Flyway 9.22.3 官方支持到 15，PG18 首次启动需确认迁移成功；跨大版本换数据必须走逻辑备份/恢复，物理数据目录不兼容 |
+| D28 | 模板承载文件 + 既有模块绑定 | 模板新增 `fch_template_file`；变量/文件加 `origin`（MODULE/TEMPLATE）。绑定只补缺失 key，同名项保留模块自有；解绑默认保留内容；共享模块禁止绑定 | 60 个存量应用的自有变量/文件不能被模板同步误删；共享模块是引用制、模板是快照 + 显式同步，混用会让订阅方被动变化。文件副本落 `fch_file`，流水线/MCP/矩阵/备份的读取路径零改动 |
 | D2 | `fcloud.storage.keep-versions` 等可配项 | 在 `application.yml` 显式暴露 | 文档 §2.4 说"可配置"，但不给默认名；用 `FCLOUD_FILE_KEEP_VERSIONS` 显式化 |
 | D3 | 前端构建产物拷贝 | `bootJar` 依赖 `copyFrontend` 任务 | §11.5 说"构建时拷入"；用 Gradle 任务而非 Dockerfile 单独 COPY，保证 `bootRun` 也能看到 |
 | D4 | 实体基类不启用逻辑删除 | `BaseEntity` 无 `deleted` 字段，`mybatis-plus.global-config.db-config` 不配 `logic-delete-field` | §3 的 schema 没有 `deleted` 列；删除一律真实删除 + 级联（§5.3/§5.4），符合"显式、可审计" |

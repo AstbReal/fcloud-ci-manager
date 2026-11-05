@@ -245,6 +245,8 @@
           </article>
         </div>
 
+        <!-- 瀑布流（columns）里元素只能排进某一列底部；
+             放在 .apps 外面才能整行居中，否则要滚到最后一列最底下才看得见 -->
         <div v-if="hiddenCount" class="more-row">
           <button class="btn" @click="showMore">
             加载更多<span class="more-n">还有 {{ hiddenCount }} 个</span>
@@ -1453,23 +1455,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
   color: var(--text-3);
 }
 
-.rail-link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 11px 14px;
-  border: 0;
-  background: none;
-  font-size: 12.5px;
-  color: var(--primary);
-  cursor: pointer;
-}
-
-.rail-link:hover {
-  background: var(--surface-2);
-}
-
 .board-main {
   min-width: 0;
 }
@@ -1636,15 +1621,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
 }
 
 .apps {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
-  gap: 16px;
+  /* 卡片高度天然不一：用多列瀑布流，避免同一行被拉齐后短卡片中间空一大块 */
+  columns: 320px;
+  column-gap: 16px;
 }
 
 .appcard {
   display: flex;
   flex-direction: column;
   position: relative;
+  margin: 0 0 16px;
+  break-inside: avoid;
   transition: border-color 0.16s, box-shadow 0.16s;
 }
 
@@ -1717,11 +1704,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
 }
 
 .groups {
-  padding: 0 14px 12px;
+  padding: 0 14px 10px;
 }
 
+/* 分组名与 chip 同一行：一个分组只占一行，卡片不会被 4 组标签撑高 */
 .group {
-  margin-bottom: 10px;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  margin-bottom: 8px;
 }
 
 .group:last-child {
@@ -1731,8 +1723,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
 .group-l {
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin-bottom: 6px;
+  gap: 4px;
+  padding-top: 5px;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 11.5px;
   /* 中文 600 在 Windows 上多为合成粗体，小字号会发糊，用 500 + 更深的颜色拉开层级 */
   font-weight: 500;
@@ -1771,6 +1767,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
   border-color: var(--border-2);
 }
 
+/* 页面上有 80+ 个 chip，键盘浏览时必须能看清焦点落在哪个 */
+.chip:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.chip.chip-hit:focus-visible {
+  outline-color: var(--primary-700);
+}
+
 .chip-nm {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1786,9 +1792,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 /* 搜索命中的模块：主色浅底 + 实线描边，和普通 chip 区分开 */
 .chip.chip-hit {
-  border-color: var(--primary-100);
+  border-color: var(--primary);
   background: var(--primary-50);
   color: var(--primary-700);
+  font-weight: 600;
 }
 
 .chip.chip-hit:hover {
@@ -1874,6 +1881,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
   }
 }
 
+/* 1024~1279：侧栏收窄，主区才放得下两列卡片（否则卡片区只有 ~470px，被迫单列） */
+@media (max-width: 1279px) and (min-width: 981px) {
+  .board {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .rail-card .card-head,
+  .rail-head {
+    padding-left: 11px;
+    padding-right: 11px;
+  }
+}
+
 @media (max-width: 600px) {
   .search {
     width: 100%;
@@ -1890,6 +1910,29 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
 
   .bar-time {
     margin-left: 0;
+  }
+
+  /* 侧栏在窄屏堆到卡片上方：两块卡片横排，省掉 300+px 的纵向高度 */
+  .rail {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .rail-list {
+    max-height: 18vh;
+  }
+
+  .rail-foot {
+    display: none;
+  }
+
+  .tpl-card .rail-body {
+    padding: 11px 12px;
+  }
+
+  .tpl-card .rail-desc {
+    font-size: 12px;
   }
 }
 </style>

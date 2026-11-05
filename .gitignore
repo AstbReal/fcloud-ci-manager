@@ -36,6 +36,7 @@ logs/
 
 # 本地 agent 记忆与临时文件
 .workbuddy/
+.codebuddy/
 
 # 误存的 cookie jar（curl -b 写出的文件名就是 "-b"）
 /-b

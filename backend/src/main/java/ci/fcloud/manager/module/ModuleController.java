@@ -4,8 +4,7 @@ import ci.fcloud.manager.app.Application;
 import ci.fcloud.manager.app.ApplicationMapper;
 import ci.fcloud.manager.app.ApplicationService;
 import ci.fcloud.manager.common.ApiResponse;
-import ci.fcloud.manager.common.BizException;
-import ci.fcloud.manager.common.SecurityUtils;
+import ci.fcloud.manager.template.TemplateService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import lombok.Data;
@@ -31,6 +30,7 @@ public class ModuleController {
     private final ApplicationMapper applicationMapper;
     private final VariableMapper variableMapper;
     private final ModuleEnvMapper moduleEnvMapper;
+    private final TemplateService templateService;
 
     // ---- 应用下模块 ----
 
@@ -145,8 +145,12 @@ public class ModuleController {
 
     @PutMapping("/modules/{id}")
     public ApiResponse<Module> update(@PathVariable Long id, @RequestBody UpdateBody body) {
-        return ApiResponse.ok(moduleService.update(id, body.toModule(),
-                body.getEnvironmentIds()));
+        Module m = moduleService.update(id, body.toModule(), body.getEnvironmentIds());
+        if (body.getEnvironmentIds() != null) {
+            // 新绑定的环境要补发模板文件；已有环境内容不变（sha 相同不产生新版本）
+            templateService.materializeFilesIfBound(id);
+        }
+        return ApiResponse.ok(m);
     }
 
     @DeleteMapping("/modules/{id}")
@@ -229,7 +233,6 @@ public class ModuleController {
         private String description;
         private String groupName;
         private Integer sortOrder;
-        private Long templateId;
         private List<Long> environmentIds;
 
         Module toModule() {
@@ -239,7 +242,6 @@ public class ModuleController {
             m.setDescription(description);
             m.setGroupName(groupName);
             m.setSortOrder(sortOrder);
-            m.setTemplateId(templateId);
             return m;
         }
     }

@@ -1,7 +1,6 @@
 package ci.fcloud.manager.env;
 
 import ci.fcloud.manager.common.ApiResponse;
-import ci.fcloud.manager.common.BizException;
 import ci.fcloud.manager.common.CurrentUser;
 import ci.fcloud.manager.common.SecurityUtils;
 import lombok.Data;
@@ -9,11 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * §5.2 环境管理。写操作仅系统管理员（SecurityConfig 的 /api/console/admin/** 前缀）。

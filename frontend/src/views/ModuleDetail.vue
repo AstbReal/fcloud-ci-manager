@@ -61,16 +61,53 @@
       <button @click="clearDeepLink">清除定位</button>
     </div>
 
-    <div v-if="templateDiff?.hasUpdate" class="tpl-bar">
-      <span class="tpl-ic"><el-icon :size="15"><RefreshRight /></el-icon></span>
+    <div v-if="module?.isShared" class="tpl-bar tpl-bar-quiet">
+      <span class="tpl-ic"><el-icon :size="15"><Connection /></el-icon></span>
       <div class="tpl-main">
-        <b>模板有更新</b>
+        <b>共享模块</b>
+        <span class="tpl-detail">共享模块通过订阅复用，不支持绑定模板</span>
+      </div>
+    </div>
+
+    <div v-else-if="!module?.templateId" class="tpl-bar tpl-bar-quiet">
+      <span class="tpl-ic"><el-icon :size="15"><Connection /></el-icon></span>
+      <div class="tpl-main">
+        <b>未绑定模板</b>
         <span class="tpl-detail">
-          新增 {{ templateDiff.added.length }} · 变更 {{ templateDiff.changed.length }} ·
-          删除 {{ templateDiff.removed.length }}，同步不会覆盖已填的值
+          绑定后可继承模板的变量定义与文件；模块已有的同名项保持自有，不会被覆盖
         </span>
       </div>
-      <button class="tpl-btn" @click="openTemplateDiff">查看并同步 →</button>
+      <button v-if="isAdmin" class="tpl-btn" @click="openBind">绑定模板 →</button>
+    </div>
+
+    <div
+      v-else
+      class="tpl-bar"
+      :class="{ 'tpl-bar-ok': templateDiff && !templateDiff.hasUpdate }"
+    >
+      <span class="tpl-ic">
+        <el-icon :size="15"><RefreshRight /></el-icon>
+      </span>
+      <div class="tpl-main">
+        <b>{{ templateName || '已绑定模板' }}</b>
+        <span v-if="templateDiff?.hasUpdate" class="tpl-detail">
+          新增 {{ templateDiff.added.length }} 变量 · 变更 {{ templateDiff.changed.length }} ·
+          文件 {{ templateDiff.files.length }} 项待处理
+        </span>
+        <span v-else-if="templateDiff" class="tpl-detail">已与模板一致</span>
+        <span v-else class="tpl-detail">正在检查模板…</span>
+      </div>
+      <button class="tpl-btn" @click="openTemplateDiff">查看详情 →</button>
+      <el-dropdown v-if="isAdmin" trigger="click" @command="onTemplateCommand">
+        <button class="tpl-more" title="模板操作">
+          <ProtoIcon name="more" :size="14" />
+        </button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="unbind">解除绑定（保留内容）</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
 
     <MatrixToolbar
@@ -129,6 +166,13 @@
               <div class="key-wrap">
                 <span class="key mono">{{ row.varKey }}</span>
                 <span v-if="row.isRequired" class="req" title="必填">*</span>
+                <span
+                  v-if="row.origin === 'TEMPLATE'"
+                  class="tag tag-plain key-origin"
+                  title="由模板下发"
+                >
+                  模板
+                </span>
               </div>
             </td>
             <td class="c-type">
@@ -293,7 +337,16 @@
           <div v-for="f in files" :key="f.id" class="file-row">
             <span class="file-ic"><el-icon :size="13"><Document /></el-icon></span>
             <div class="file-main" title="点击预览" @click="openPreview(f)">
-              <div class="file-key mono" :title="f.fileKey">{{ f.fileKey }}</div>
+              <div class="file-key-line">
+                <span class="file-key mono" :title="f.fileKey">{{ f.fileKey }}</span>
+                <span
+                  v-if="f.origin === 'TEMPLATE'"
+                  class="tag tag-plain file-origin"
+                  title="由模板下发；手动上传后会转为模块自有文件"
+                >
+                  模板
+                </span>
+              </div>
               <div class="file-sub">{{ f.remark || '无备注' }} · v{{ f.currentVersion }}</div>
             </div>
             <div class="file-ops">
@@ -676,11 +729,111 @@
       </template>
     </el-dialog>
 
+    <!-- 绑定模板 -->
+    <el-dialog v-model="bindOpen" title="绑定模板" width="560px" @closed="resetBind">
+      <div class="bind-field">
+        <label class="fld-lb" for="bind-template">选择模板</label>
+        <el-select
+          id="bind-template"
+          v-model="bindTemplateId"
+          filterable
+          placeholder="搜索模板名称或 code"
+          style="width: 100%"
+          @change="loadBindPreview"
+        >
+          <el-option
+            v-for="t in templateOptions"
+            :key="t.id"
+            :label="`${t.name} · ${t.code}`"
+            :value="t.id"
+          />
+        </el-select>
+      </div>
+
+      <div v-if="bindPreviewLoading" class="bind-loading">正在生成预览…</div>
+      <div v-else-if="bindPreview" class="bind-preview">
+        <div class="bind-summary">
+          <div class="bs-item">
+            <span class="bs-n">{{ bindPreview.added.length }}</span>
+            <span class="bs-l">新增变量</span>
+          </div>
+          <div class="bs-item">
+            <span class="bs-n" :class="{ warn: bindPreview.conflicts.length > 0 }">
+              {{ bindPreview.conflicts.length }}
+            </span>
+            <span class="bs-l">同名自有变量</span>
+          </div>
+          <div class="bs-item">
+            <span class="bs-n">{{ fileAddCount }}</span>
+            <span class="bs-l">新增文件</span>
+          </div>
+          <div class="bs-item">
+            <span class="bs-n" :class="{ warn: fileConflictCount > 0 }">
+              {{ fileConflictCount }}
+            </span>
+            <span class="bs-l">同名自有文件</span>
+          </div>
+        </div>
+
+        <div v-if="bindPreview.conflicts.length" class="bind-conflict">
+          <div class="bc-title">以下同名变量保留模块自有，不会被模板覆盖</div>
+          <div class="bc-keys">
+            <span v-for="c in bindPreview.conflicts.slice(0, 8)" :key="c.varKey" class="mono">
+              {{ c.varKey }}
+            </span>
+            <span v-if="bindPreview.conflicts.length > 8" class="muted">
+              等 {{ bindPreview.conflicts.length }} 项
+            </span>
+          </div>
+        </div>
+
+        <div v-if="bindPreview.appConflicts.length" class="bind-conflict">
+          <div class="bc-title">与同应用其他模块重复（{{ bindPreview.appConflicts.length }}）</div>
+          <div class="bc-keys">
+            <span
+              v-for="c in bindPreview.appConflicts.slice(0, 8)"
+              :key="c.kind + c.key + c.moduleCode"
+              class="mono"
+            >
+              {{ c.key }}
+              <span class="muted">→ {{ c.moduleCode }}{{ c.shared ? '（共享）' : '' }}</span>
+            </span>
+            <span v-if="bindPreview.appConflicts.length > 8" class="muted">
+              等 {{ bindPreview.appConflicts.length }} 项
+            </span>
+          </div>
+          <div class="bc-hint">同时请求这些模块时，重复 key 后输出会覆盖前面的；同名文件会冲突。</div>
+        </div>
+
+        <el-alert type="info" :closable="false" show-icon>
+          <template #title>绑定不会覆盖任何已有值</template>
+          模块已有的同名变量/文件保持自有；模板只新增缺失项。解绑时默认保留已下发内容。
+        </el-alert>
+      </div>
+      <div v-else-if="bindTemplateId" class="bind-loading">选择模板后显示预览</div>
+
+      <template #footer>
+        <button class="btn" @click="bindOpen = false">取消</button>
+        <button
+          class="btn btn-primary"
+          :disabled="!bindTemplateId || bindPreviewLoading || bindApplying"
+          @click="applyBind"
+        >
+          {{ bindApplying ? '绑定中…' : '确认绑定' }}
+        </button>
+      </template>
+    </el-dialog>
+
     <!-- 模板 diff -->
     <el-drawer v-model="diffDrawer" title="模板同步" size="640px">
       <div v-if="!templateDiff" class="fc-empty">加载中…</div>
       <template v-else>
-        <h4>新增（{{ templateDiff.added.length }}）</h4>
+        <div class="diff-intro">
+          <span class="mono">{{ templateName || '已绑定模板' }}</span>
+          <span class="muted">同步只处理模板来源项；模块自有同名项不会被动。</span>
+        </div>
+
+        <h4>新增变量（{{ templateDiff.added.length }}）</h4>
         <el-checkbox-group v-model="acceptAdded">
           <div v-for="v in templateDiff.added" :key="v.varKey" class="diff-row">
             <el-checkbox :value="v.varKey">
@@ -711,28 +864,85 @@
         </el-checkbox-group>
         <el-empty v-if="!templateDiff.changed.length" description="无定义变更" :image-size="40" />
 
-        <h4>模板已删除（{{ templateDiff.removed.length }}）</h4>
-        <el-checkbox-group v-model="removedKeys">
-          <div v-for="v in templateDiff.removed" :key="v.varKey" class="diff-row">
-            <el-checkbox :value="v.varKey">
-              <span class="mono">{{ v.varKey }}</span>
-            </el-checkbox>
+        <h4>同名自有变量（{{ templateDiff.conflicts.length }}）</h4>
+        <div v-for="c in templateDiff.conflicts" :key="c.varKey" class="diff-row conflict-row">
+          <span class="mono">{{ c.varKey }}</span>
+          <span class="tag tag-warn">保留模块自有</span>
+          <span class="muted">
+            模块 {{ c.module.valueType }} / {{ c.module.remark || '无备注' }}，模板
+            {{ c.template.valueType }} / {{ c.template.remark || '无备注' }}
+          </span>
+        </div>
+        <el-empty
+          v-if="!templateDiff.conflicts.length"
+          description="无同名变量"
+          :image-size="40"
+        />
+
+        <h4>文件（{{ templateDiff.files.length }}）</h4>
+        <div v-for="f in templateDiff.files" :key="f.fileKey" class="diff-row file-diff-row">
+          <span class="mono">{{ f.fileKey }}</span>
+          <span class="tag" :class="fileStatusClass(f)">{{ fileStatusText(f) }}</span>
+          <span class="muted">{{ fileStatusDetail(f) }}</span>
+        </div>
+        <el-empty v-if="!templateDiff.files.length" description="文件已一致" :image-size="40" />
+
+        <template v-if="templateDiff.appConflicts.length">
+          <h4>与同应用其他模块重复（{{ templateDiff.appConflicts.length }}）</h4>
+          <div
+            v-for="c in templateDiff.appConflicts"
+            :key="c.kind + c.key + c.moduleCode"
+            class="diff-row conflict-row"
+          >
+            <span class="tag tag-warn">{{ c.kind === 'VAR' ? '变量' : '文件' }}</span>
+            <span class="mono">{{ c.key }}</span>
+            <span class="muted">
+              → {{ c.moduleCode }}{{ c.shared ? '（共享模块）' : '' }}
+            </span>
           </div>
-        </el-checkbox-group>
-        <el-empty v-if="!templateDiff.removed.length" description="无删除项" :image-size="40" />
-        <el-radio-group v-if="templateDiff.removed.length" v-model="removedAction">
-          <el-radio value="DELETE">删除模块变量</el-radio>
-          <el-radio value="KEEP">保留为模块自有变量</el-radio>
+        </template>
+
+        <template v-if="templateDiff.removed.length">
+          <h4>模板已删除的变量（{{ templateDiff.removed.length }}）</h4>
+          <el-checkbox-group v-model="removedKeys">
+            <div v-for="v in templateDiff.removed" :key="v.varKey" class="diff-row">
+              <el-checkbox :value="v.varKey">
+                <span class="mono">{{ v.varKey }}</span>
+              </el-checkbox>
+            </div>
+          </el-checkbox-group>
+        </template>
+
+        <template v-if="templateDiff.removedFiles.length">
+          <h4>模板已删除的文件（{{ templateDiff.removedFiles.length }}）</h4>
+          <el-checkbox-group v-model="removedFileKeys">
+            <div v-for="f in templateDiff.removedFiles" :key="f.fileKey" class="diff-row">
+              <el-checkbox :value="f.fileKey">
+                <span class="mono">{{ f.fileKey }}</span>
+                <span class="muted"> — {{ f.environmentCount }} 个环境</span>
+              </el-checkbox>
+            </div>
+          </el-checkbox-group>
+        </template>
+
+        <el-radio-group
+          v-if="templateDiff.removed.length || templateDiff.removedFiles.length"
+          v-model="removedAction"
+          class="removed-action"
+        >
+          <el-radio value="DELETE">删除模块变量/文件</el-radio>
+          <el-radio value="KEEP">保留为模块自有</el-radio>
         </el-radio-group>
 
         <el-alert type="warning" :closable="false" show-icon style="margin-top: 16px">
           <template #title>同步永不覆盖已填的值</template>
-          同步只更新变量定义（类型/备注/必填）与新增变量，不会修改任何已有的全局值或环境覆盖。
+          变量只更新定义（类型/备注/必填），不动全局值和环境覆盖；文件只更新模板副本，
+          同名模块自有文件保持不动。
         </el-alert>
       </template>
       <template #footer>
         <el-button @click="diffDrawer = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="doSync">同步</el-button>
+        <el-button v-if="isAdmin" type="primary" :loading="saving" @click="doSync">同步</el-button>
       </template>
     </el-drawer>
 
@@ -827,6 +1037,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Aim,
+  Connection,
   CopyDocument,
   Document,
   EditPen,
@@ -847,7 +1058,15 @@ import { api, saveBlob } from '@/api/http'
 import { COPY_FAIL_HINT, copyText } from '@/utils/clipboard'
 import { stripCommentLines } from '@/utils/codeHighlight'
 import { useUserStore } from '@/stores/user'
-import { envApi, type Env as EnvOption } from '@/api'
+import {
+  envApi,
+  templateApi,
+  type Env as EnvOption,
+  type TemplateDiff as ApiTemplateDiff,
+  type TemplateFileStatus,
+  type TemplateItem,
+  type TemplateBindResult
+} from '@/api'
 import { useDeepLink } from '@/composables/useDeepLink'
 import type { Id } from '@/types/id'
 import type { ChainData, Env, MatrixData, MatrixRow } from '@/types/module'
@@ -872,6 +1091,7 @@ interface FileItem {
   fileKey: string
   remark?: string
   currentVersion: number
+  origin?: 'MODULE' | 'TEMPLATE'
 }
 /** 待上传队列项：一个文件一条，备注与版本各自独立 */
 interface PendingUpload {
@@ -881,17 +1101,7 @@ interface PendingUpload {
   version: number
   error?: string
 }
-interface DiffChanged {
-  varKey: string
-  template: { valueType: string; remark?: string; isRequired: boolean }
-  module: { valueType: string; remark?: string; isRequired: boolean }
-}
-interface TemplateDiff {
-  added: Array<{ varKey: string; valueType: string; remark?: string }>
-  changed: DiffChanged[]
-  removed: Array<{ varKey: string }>
-  hasUpdate: boolean
-}
+type TemplateDiff = ApiTemplateDiff
 
 const route = useRoute()
 const router = useRouter()
@@ -902,6 +1112,13 @@ const module = ref<ModuleDetail | null>(null)
 const editOpen = ref(false)
 const matrix = ref<MatrixData | null>(null)
 const templateDiff = ref<TemplateDiff | null>(null)
+const templateName = ref('')
+const templateOptions = ref<TemplateItem[]>([])
+const bindOpen = ref(false)
+const bindTemplateId = ref<Id | null>(null)
+const bindPreview = ref<TemplateDiff | null>(null)
+const bindPreviewLoading = ref(false)
+const bindApplying = ref(false)
 const loading = ref(true)
 const saving = ref(false)
 
@@ -1004,7 +1221,15 @@ const importEnvId = ref<number | null>(null)
 const acceptAdded = ref<string[]>([])
 const acceptChanged = ref<string[]>([])
 const removedKeys = ref<string[]>([])
+const removedFileKeys = ref<string[]>([])
 const removedAction = ref<'DELETE' | 'KEEP'>('KEEP')
+
+const fileAddCount = computed(
+  () => (bindPreview.value?.files || []).filter((f) => f.missingEnvironments > 0).length
+)
+const fileConflictCount = computed(
+  () => (bindPreview.value?.files || []).filter((f) => f.conflictEnvironments > 0).length
+)
 
 // ---- 继承链 ----
 const chainOpen = ref(false)
@@ -1233,8 +1458,22 @@ async function loadModule() {
     module.value = await api.get<ModuleDetail>(
       `/api/console/admin/modules/${moduleId.value}`
     )
+    await loadTemplateMeta()
   } catch {
     // 非管理员看不到 admin 详情接口；矩阵仍可加载
+  }
+}
+
+async function loadTemplateMeta() {
+  if (!module.value?.templateId) {
+    templateName.value = ''
+    return
+  }
+  try {
+    const t = await templateApi.detail(module.value.templateId)
+    templateName.value = t.name
+  } catch {
+    templateName.value = ''
   }
 }
 
@@ -1257,7 +1496,7 @@ async function onModuleCommand(cmd: string) {
 }
 
 async function onModuleSaved() {
-  await Promise.all([loadModule(), loadMatrix()])
+  await Promise.all([loadModule(), loadMatrix(), loadTemplateDiff()])
   if (fileEnvId.value && !envs.value.some((e) => e.id === fileEnvId.value)) {
     fileEnvId.value = envs.value[0]?.id ?? null
   }
@@ -1285,9 +1524,7 @@ async function loadTemplateDiff() {
     return
   }
   try {
-    templateDiff.value = await api.get<TemplateDiff>(
-      `/api/console/admin/modules/${moduleId.value}/template-diff`
-    )
+    templateDiff.value = await templateApi.diff(moduleId.value)
   } catch {
     templateDiff.value = null
   }
@@ -1527,12 +1764,14 @@ async function copyLink(row?: MatrixRow) {
   }
 }
 
-// ---- 模板同步 ----
+// ---- 模板同步 / 绑定 / 解绑 ----
 async function openTemplateDiff() {
   await loadTemplateDiff()
   acceptAdded.value = []
   acceptChanged.value = []
-  removedKeys.value = []
+  // 默认全选「模板已删除」项 + KEEP：等于把内容保留为模块自有，不丢数据
+  removedKeys.value = (templateDiff.value?.removed || []).map((v) => v.varKey)
+  removedFileKeys.value = (templateDiff.value?.removedFiles || []).map((f) => f.fileKey)
   removedAction.value = 'KEEP'
   diffDrawer.value = true
 }
@@ -1540,18 +1779,102 @@ async function openTemplateDiff() {
 async function doSync() {
   saving.value = true
   try {
-    await api.post(`/api/console/admin/modules/${moduleId.value}/template-sync`, {
+    await templateApi.sync(moduleId.value, {
       acceptAdded: acceptAdded.value,
       acceptChanged: acceptChanged.value,
       removedKeys: removedKeys.value,
-      removedAction: removedAction.value
+      removedAction: removedAction.value,
+      removedFileKeys: removedFileKeys.value
     })
     ElMessage.success('同步完成')
     diffDrawer.value = false
-    await Promise.all([loadMatrix(), loadTemplateDiff()])
+    await Promise.all([loadMatrix(), loadTemplateDiff(), loadFiles(), loadModule()])
   } finally {
     saving.value = false
   }
+}
+
+async function openBind() {
+  bindOpen.value = true
+  bindTemplateId.value = null
+  bindPreview.value = null
+  try {
+    templateOptions.value = await templateApi.list()
+  } catch {
+    templateOptions.value = []
+  }
+}
+
+function resetBind() {
+  bindTemplateId.value = null
+  bindPreview.value = null
+  bindPreviewLoading.value = false
+}
+
+async function loadBindPreview() {
+  if (!bindTemplateId.value) {
+    bindPreview.value = null
+    return
+  }
+  bindPreviewLoading.value = true
+  try {
+    bindPreview.value = await templateApi.previewBind(moduleId.value, bindTemplateId.value)
+  } catch {
+    bindPreview.value = null
+  } finally {
+    bindPreviewLoading.value = false
+  }
+}
+
+async function applyBind() {
+  if (!bindTemplateId.value) return
+  bindApplying.value = true
+  try {
+    const r: TemplateBindResult = await templateApi.bind(moduleId.value, bindTemplateId.value)
+    ElMessage.success(
+      `已绑定 · 新增 ${r.addedVars} 变量 / ${r.addedFiles} 文件，保留 ${r.varConflicts + r.fileConflicts} 项自有内容`
+    )
+    bindOpen.value = false
+    await Promise.all([loadModule(), loadMatrix(), loadTemplateDiff(), loadFiles()])
+  } finally {
+    bindApplying.value = false
+  }
+}
+
+async function onTemplateCommand(cmd: string) {
+  if (cmd !== 'unbind') return
+  try {
+    await ElMessageBox.confirm(
+      '解除绑定后，已下发的变量和文件会保留为模块自有内容，不再跟随模板更新。',
+      '解除模板绑定',
+      { type: 'warning', confirmButtonText: '解除绑定' }
+    )
+    const r = await templateApi.unbind(moduleId.value, false)
+    ElMessage.success(`已解绑 · 保留 ${r.variables} 个变量 / ${r.files} 个文件`)
+    await Promise.all([loadModule(), loadMatrix(), loadTemplateDiff(), loadFiles()])
+  } catch {
+    // 取消
+  }
+}
+
+function fileStatusText(f: TemplateFileStatus) {
+  if (f.conflictEnvironments > 0) return '同名自有'
+  if (f.outdatedEnvironments > 0) return '待更新'
+  return '待下发'
+}
+
+function fileStatusClass(f: TemplateFileStatus) {
+  if (f.conflictEnvironments > 0) return 'tag-danger'
+  if (f.outdatedEnvironments > 0) return 'tag-warn'
+  return 'tag-plain'
+}
+
+function fileStatusDetail(f: TemplateFileStatus) {
+  const parts: string[] = []
+  if (f.missingEnvironments > 0) parts.push(`${f.missingEnvironments} 个环境缺失`)
+  if (f.outdatedEnvironments > 0) parts.push(`${f.outdatedEnvironments} 个环境待更新`)
+  if (f.conflictEnvironments > 0) parts.push(`${f.conflictEnvironments} 个环境保留自有`)
+  return parts.join(' · ')
 }
 
 // ---- 文件 ----
@@ -2230,8 +2553,7 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
-.file-list,
-.member-list {
+.file-list {
   padding: 6px;
 }
 
@@ -2339,8 +2661,7 @@ onBeforeUnmount(() => {
   color: var(--text-3);
 }
 
-.file-row,
-.member-row {
+.file-row {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -2348,8 +2669,7 @@ onBeforeUnmount(() => {
   border-radius: var(--r-sm);
 }
 
-.file-row:hover,
-.member-row:hover {
+.file-row:hover {
   background: var(--surface-2);
 }
 
@@ -2364,8 +2684,7 @@ onBeforeUnmount(() => {
   place-items: center;
 }
 
-.file-main,
-.member-main {
+.file-main {
   min-width: 0;
   flex: 1;
 }
@@ -2374,8 +2693,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.file-key,
-.member-nm {
+.file-key {
   font-size: 12.5px;
   font-weight: 500;
   overflow: hidden;
@@ -2383,8 +2701,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.file-sub,
-.member-em {
+.file-sub {
   margin-top: 1px;
   font-size: 11px;
   color: var(--text-3);
@@ -2405,8 +2722,7 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
-.file-ops button,
-.m-remove {
+.file-ops button {
   border: 0;
   background: none;
   padding: 2px 4px;
@@ -2416,28 +2732,18 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.file-ops button:hover,
-.m-remove:hover {
+.file-ops button:hover {
   background: var(--surface-3);
   color: var(--text);
 }
 
-.file-ops .danger,
-.m-remove {
+.file-ops .danger {
   color: var(--danger);
 }
 
-.file-ops .danger:hover,
-.m-remove:hover {
+.file-ops .danger:hover {
   background: var(--danger-50);
   color: var(--danger);
-}
-
-.panel-empty {
-  padding: 24px 12px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-3);
 }
 
 .up-form {
@@ -2548,14 +2854,6 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--border);
   font-size: 11.5px;
   color: var(--text-3);
-}
-
-.member-row .el-avatar {
-  flex: 0 0 26px;
-  background: #e8edf7;
-  color: #3b5b9a;
-  font-size: 11px;
-  font-weight: 600;
 }
 
 .diff-row {
@@ -2893,5 +3191,167 @@ h4 {
   .lk-row {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+.tpl-bar-quiet {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+
+.tpl-bar-quiet .tpl-ic {
+  color: var(--primary);
+}
+
+.tpl-bar-quiet .tpl-main,
+.tpl-bar-quiet .tpl-btn {
+  color: var(--text-2);
+}
+
+.tpl-bar-quiet .tpl-detail {
+  color: var(--text-3);
+}
+
+.tpl-bar-ok {
+  border-color: var(--border);
+  background: var(--ok-50);
+}
+
+.tpl-bar-ok .tpl-ic,
+.tpl-bar-ok .tpl-main,
+.tpl-bar-ok .tpl-btn {
+  color: var(--ok);
+}
+
+.tpl-bar-ok .tpl-detail {
+  color: var(--text-2);
+}
+
+.tpl-more {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.tpl-more:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.bind-field {
+  margin-bottom: 16px;
+}
+
+.bind-loading {
+  padding: 28px 0;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.bind-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.bs-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.bs-n {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.bs-n.warn {
+  color: var(--warn);
+}
+
+.bs-l {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.bind-conflict {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--warn-50);
+}
+
+.bc-title {
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--warn);
+}
+
+.bc-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.file-key-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.file-origin,
+.key-origin {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  font-size: 10px;
+}
+
+.diff-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
+
+.conflict-row {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.file-diff-row {
+  align-items: center;
+}
+
+.removed-action {
+  margin-top: 8px;
+}
+.bc-hint {
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-3);
 }
 </style>

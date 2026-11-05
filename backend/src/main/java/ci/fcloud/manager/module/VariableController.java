@@ -63,6 +63,7 @@ public class VariableController {
             r.setRemark(v.getRemark());
             r.setIsRequired(v.getIsRequired());
             r.setSortOrder(v.getSortOrder());
+            r.setOrigin(v.getOrigin());
             r.setCreatedBy(v.getCreatedBy());
             // 本人创建的加密变量，创建人本人也可看（§6.4）
             boolean revealThis = canReveal
@@ -353,6 +354,8 @@ public class VariableController {
         private String remark;
         private Boolean isRequired;
         private Integer sortOrder;
+        /** MODULE = 模块自有 / TEMPLATE = 模板下发 */
+        private String origin;
         private Long createdBy;
         private boolean canReveal;
         /** key = environmentId，0 表示全局值列 */

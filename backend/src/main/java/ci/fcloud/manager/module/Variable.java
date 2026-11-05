@@ -42,6 +42,10 @@ public class Variable extends BaseEntity {
     @TableField("sort_order")
     private Integer sortOrder;
 
+    /** MODULE = 模块自有 / TEMPLATE = 模板下发 */
+    @TableField("origin")
+    private String origin;
+
     @TableField("created_by")
     private Long createdBy;
 

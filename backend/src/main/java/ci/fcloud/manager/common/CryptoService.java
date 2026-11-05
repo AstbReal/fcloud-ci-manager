@@ -38,11 +38,6 @@ public class CryptoService {
         this.key = new SecretKeySpec(raw, "AES");
     }
 
-    /** 供测试与启动校验使用：返回主密钥的 Base64（仅内部，禁止打印）。 */
-    public static String encodeMasterKey(byte[] raw) {
-        return Base64.getEncoder().encodeToString(raw);
-    }
-
     public String encrypt(String plain) {
         if (plain == null) {
             return null;
@@ -81,18 +76,6 @@ public class CryptoService {
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException("decrypt failed");
-        }
-    }
-
-    public boolean isEncryptedValue(String value) {
-        if (value == null || value.isEmpty()) {
-            return false;
-        }
-        try {
-            byte[] all = Base64.getDecoder().decode(value);
-            return all.length > IV_LEN;
-        } catch (IllegalArgumentException e) {
-            return false;
         }
     }
 

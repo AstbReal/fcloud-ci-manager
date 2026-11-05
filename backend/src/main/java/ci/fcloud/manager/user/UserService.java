@@ -56,14 +56,6 @@ public class UserService extends ServiceImpl<UserMapper, User> {
         return u;
     }
 
-    public void touchLogin(Long userId) {
-        User u = getById(userId);
-        if (u != null) {
-            u.setLastLoginAt(Instant.now());
-            updateById(u);
-        }
-    }
-
     public void updateNickname(Long userId, String nickname) {
         User u = getById(userId);
         if (u == null) {

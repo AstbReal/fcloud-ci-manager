@@ -69,13 +69,13 @@ env -u SERVER__PORT FCLOUD_JWT_SECRET=0123456789abcdef0123456789abcdef0123456789
 
 ```bash
 cd frontend
-pnpm install            # 首次；pnpm 版本由 packageManager 字段锁定（corepack 自动取）
-pnpm dev --host 127.0.0.1 --port 5173
+npm install             # 首次；package-lock.json 是唯一依赖事实源
+npm run dev -- --host 127.0.0.1 --port 5173
 # 直接用 node 跑也可以：
 # node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173
 ```
 
-没装 pnpm 时执行 `corepack enable pnpm`；Node 需 18+（Vite 5 要求），推荐 20/22 LTS。
+Node 需 18+（Vite 5 要求），推荐 20/22 LTS。
 
 `vite.config.ts` 把 `/api`、`/oauth2`、`/oauth`、`/login/oauth2`、`/actuator` 反代到 8080，
 并且 `changeOrigin: false`，所以 OAuth 的 `redirect_uri` 会指回 `http://127.0.0.1:5173/login/oauth2/code/gitlab`。

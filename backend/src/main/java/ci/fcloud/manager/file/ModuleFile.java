@@ -34,6 +34,10 @@ public class ModuleFile extends BaseEntity {
     @TableField("current_version")
     private Integer currentVersion;
 
+    /** MODULE = 模块自有 / TEMPLATE = 模板下发 */
+    @TableField("origin")
+    private String origin;
+
     @TableField("created_by")
     private Long createdBy;
 

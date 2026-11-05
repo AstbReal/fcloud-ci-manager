@@ -37,6 +37,10 @@ public class FileVersion extends BaseEntity {
     @TableField("size")
     private Long size;
 
+    /** SHA-256（hex）；旧数据可能为空 */
+    @TableField("sha256")
+    private String sha256;
+
     @TableField("uploaded_by")
     private Long uploadedBy;
 

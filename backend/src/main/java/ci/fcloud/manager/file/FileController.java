@@ -2,7 +2,6 @@ package ci.fcloud.manager.file;
 
 import ci.fcloud.manager.audit.AuditService;
 import ci.fcloud.manager.common.ApiResponse;
-import ci.fcloud.manager.common.SecurityUtils;
 import ci.fcloud.manager.module.ModuleService;
 import ci.fcloud.manager.module.PermissionService;
 import lombok.Data;
@@ -47,6 +46,7 @@ public class FileController {
             vo.setFileKey(f.getFileKey());
             vo.setRemark(f.getRemark());
             vo.setCurrentVersion(f.getCurrentVersion());
+            vo.setOrigin(f.getOrigin());
             vo.setCreatedAt(f.getCreatedAt());
             vo.setUpdatedAt(f.getUpdatedAt());
             return vo;
@@ -70,6 +70,7 @@ public class FileController {
         vo.setFileKey(saved.getFileKey());
         vo.setRemark(saved.getRemark());
         vo.setCurrentVersion(saved.getCurrentVersion());
+        vo.setOrigin(saved.getOrigin());
         return ApiResponse.ok(vo);
     }
 
@@ -165,6 +166,7 @@ public class FileController {
         private String fileKey;
         private String remark;
         private Integer currentVersion;
+        private String origin;
         private java.time.Instant createdAt;
         private java.time.Instant updatedAt;
     }

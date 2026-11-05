@@ -796,10 +796,6 @@ tbody tr.app-row.is-open td {
   color: var(--text-3);
 }
 
-.num {
-  font-variant-numeric: tabular-nums;
-}
-
 .tag {
   display: inline-flex;
   align-items: center;

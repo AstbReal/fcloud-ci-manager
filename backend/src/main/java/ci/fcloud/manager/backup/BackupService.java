@@ -20,6 +20,8 @@ import ci.fcloud.manager.template.Template;
 import ci.fcloud.manager.setting.ArtifactRepoClient;
 import ci.fcloud.manager.setting.ArtifactRepoSettingService;
 import ci.fcloud.manager.template.TemplateMapper;
+import ci.fcloud.manager.template.TemplateFile;
+import ci.fcloud.manager.template.TemplateFileMapper;
 import ci.fcloud.manager.template.TemplateVar;
 import ci.fcloud.manager.template.TemplateVarMapper;
 import ci.fcloud.manager.token.ApiToken;
@@ -46,7 +48,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -87,6 +88,7 @@ public class BackupService {
 
     private static final String MANIFEST = "manifest.json";
     private static final String FILES_DIR = "files/";
+    private static final String TEMPLATE_FILES_DIR = "template-files/";
     private static final DateTimeFormatter TS =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
@@ -107,6 +109,7 @@ public class BackupService {
     private final FileVersionMapper fileVersionMapper;
     private final TemplateMapper templateMapper;
     private final TemplateVarMapper templateVarMapper;
+    private final TemplateFileMapper templateFileMapper;
     private final ApiTokenMapper tokenMapper;
     private final ApiTokenService tokenService;
     private final PatMapper patMapper;
@@ -273,6 +276,18 @@ public class BackupService {
                 Files.copy(src, tar);
                 tar.closeArchiveEntry();
             }
+            // template-files/：模板文件只存一份，按 storagePath 还原
+            for (TemplateFile tf : templateFileMapper.selectList(null)) {
+                Path src = Paths.get(props.getStorage().getRoot(), tf.getStoragePath());
+                if (!Files.exists(src)) {
+                    continue;
+                }
+                String entry = TEMPLATE_FILES_DIR + tf.getStoragePath();
+                TarArchiveEntry te = new TarArchiveEntry(src.toFile(), entry);
+                tar.putArchiveEntry(te);
+                Files.copy(src, tar);
+                tar.closeArchiveEntry();
+            }
             tar.finish();
         }
     }
@@ -289,7 +304,7 @@ public class BackupService {
     private Manifest buildManifest() {
         Manifest m = new Manifest();
         // v2：新增 pats / settings，并补上应用的 GitLab 绑定字段
-        m.version = 2;
+        m.version = 3;
         m.backupAt = Instant.now();
 
         // 用户：不含任何密码字段（设计上本就没有）
@@ -393,6 +408,7 @@ public class BackupService {
             o.put("remark", v.getRemark());
             o.put("isRequired", v.getIsRequired());
             o.put("sortOrder", v.getSortOrder());
+            o.put("origin", v.getOrigin());
             o.put("createdBy", v.getCreatedBy());
             o.put("createdAt", v.getCreatedAt());
             o.put("updatedAt", v.getUpdatedAt());
@@ -421,6 +437,7 @@ public class BackupService {
             o.put("fileKey", f.getFileKey());
             o.put("remark", f.getRemark());
             o.put("currentVersion", f.getCurrentVersion());
+            o.put("origin", f.getOrigin());
             o.put("createdBy", f.getCreatedBy());
             o.put("createdAt", f.getCreatedAt());
             o.put("updatedAt", f.getUpdatedAt());
@@ -436,6 +453,7 @@ public class BackupService {
             o.put("originalName", fv.getOriginalName());
             o.put("mimeType", fv.getMimeType());
             o.put("size", fv.getSize());
+            o.put("sha256", fv.getSha256());
             o.put("uploadedBy", fv.getUploadedBy());
             o.put("createdAt", fv.getCreatedAt());
             m.fileVersions.add(o);
@@ -464,6 +482,23 @@ public class BackupService {
             o.put("isRequired", tv.getIsRequired());
             o.put("sortOrder", tv.getSortOrder());
             m.templateVars.add(o);
+        }
+
+        for (TemplateFile tf : templateFileMapper.selectList(null)) {
+            Map<String, Object> o = new LinkedHashMap<>();
+            o.put("id", tf.getId());
+            o.put("templateId", tf.getTemplateId());
+            o.put("fileKey", tf.getFileKey());
+            o.put("remark", tf.getRemark());
+            o.put("storagePath", tf.getStoragePath());
+            o.put("originalName", tf.getOriginalName());
+            o.put("mimeType", tf.getMimeType());
+            o.put("size", tf.getSize());
+            o.put("sha256", tf.getSha256());
+            o.put("createdBy", tf.getCreatedBy());
+            o.put("createdAt", tf.getCreatedAt());
+            o.put("updatedAt", tf.getUpdatedAt());
+            m.templateFiles.add(o);
         }
 
         // Token：仅 hash 与前缀，绝不含明文
@@ -823,6 +858,7 @@ public class BackupService {
         Set<Long> skipMembers = new HashSet<>();
         Set<Long> skipOverrides = new HashSet<>();
         Set<Long> skipTemplateVars = new HashSet<>();
+        Set<Long> skipTemplateFiles = new HashSet<>();
 
         if ("MERGE".equals(s)) {
             // §9.2 MERGE：按自然键（email / env.code / app.code / module(app,code) /
@@ -963,6 +999,15 @@ public class BackupService {
                     skipTemplateVars.add(num(o.get("id")));
                 }
             }
+            Set<String> existTplFiles = new HashSet<>();
+            for (TemplateFile tf : templateFileMapper.selectList(null)) {
+                existTplFiles.add(tf.getTemplateId() + "/" + tf.getFileKey());
+            }
+            for (Map<String, Object> o : m.templateFiles) {
+                if (existTplFiles.contains(o.get("templateId") + "/" + o.get("fileKey"))) {
+                    skipTemplateFiles.add(num(o.get("id")));
+                }
+            }
         }
 
         int counts = 0;
@@ -979,6 +1024,7 @@ public class BackupService {
         counts += insertFileVersions(m.fileVersions, skipFileVersions);
         counts += insertTemplates(m.templates, skipTemplates);
         counts += insertTemplateVars(m.templateVars, skipTemplateVars);
+        counts += insertTemplateFiles(m.templateFiles, skipTemplateFiles);
         counts += insertTokens(m.tokens, skipTokens);
         counts += insertPats(m.pats, m.users, skipPats);
         counts += upsertSettings(m.settings, "OVERWRITE".equals(s));
@@ -1079,6 +1125,15 @@ public class BackupService {
                 out.add("template:" + o.get("code"));
             }
         }
+        Set<String> templateFileKeys = new HashSet<>();
+        for (TemplateFile tf : templateFileMapper.selectList(null)) {
+            templateFileKeys.add(tf.getTemplateId() + "/" + tf.getFileKey());
+        }
+        for (Map<String, Object> o : m.templateFiles) {
+            if (templateFileKeys.contains(o.get("templateId") + "/" + o.get("fileKey"))) {
+                out.add("template-file:" + o.get("fileKey"));
+            }
+        }
         for (Map<String, Object> o : m.tokens) {
             if (tokenHashes.contains(o.get("tokenHash"))) {
                 out.add("token:" + o.get("tokenPrefix"));
@@ -1118,7 +1173,7 @@ public class BackupService {
                 + "fch_variable_override, fch_variable, fch_file_version, fch_file, "
                 + "fch_module_member, fch_module_subscription, fch_module_env, "
                 + "fch_module, fch_application, fch_environment, "
-                + "fch_template_var, fch_template, fch_api_token, fch_pat, fch_user "
+                + "fch_template_file, fch_template_var, fch_template, fch_api_token, fch_pat, fch_user "
                 + "CASCADE");
         // fch_system_setting 故意不参与 TRUNCATE：旧备份包（v1）里没有 settings，
         // 清空会把 GitLab 接入配置一起抹掉，导致恢复完登不进来。
@@ -1290,6 +1345,7 @@ public class BackupService {
             v.setRemark(str(o.get("remark")));
             v.setIsRequired(bool(o.get("isRequired")));
             v.setSortOrder(intval(o.get("sortOrder")));
+            v.setOrigin(str(o.get("origin")));
             v.setCreatedBy(num(o.get("createdBy")));
             v.setCreatedAt(instant(o.get("createdAt")));
             v.setUpdatedAt(instant(o.get("updatedAt")));
@@ -1332,6 +1388,7 @@ public class BackupService {
             f.setFileKey(str(o.get("fileKey")));
             f.setRemark(str(o.get("remark")));
             f.setCurrentVersion(intval(o.get("currentVersion")));
+            f.setOrigin(str(o.get("origin")));
             f.setCreatedBy(num(o.get("createdBy")));
             f.setCreatedAt(instant(o.get("createdAt")));
             f.setUpdatedAt(instant(o.get("updatedAt")));
@@ -1355,6 +1412,7 @@ public class BackupService {
             fv.setOriginalName(str(o.get("originalName")));
             fv.setMimeType(str(o.get("mimeType")));
             fv.setSize(longval(o.get("size")));
+            fv.setSha256(str(o.get("sha256")));
             fv.setUploadedBy(num(o.get("uploadedBy")));
             fv.setCreatedAt(instant(o.get("createdAt")));
             fileVersionMapper.insert(fv);
@@ -1399,6 +1457,31 @@ public class BackupService {
             tv.setIsRequired(bool(o.get("isRequired")));
             tv.setSortOrder(intval(o.get("sortOrder")));
             templateVarMapper.insert(tv);
+            n++;
+        }
+        return n;
+    }
+
+    private int insertTemplateFiles(List<Map<String, Object>> rows, Set<Long> skip) {
+        int n = 0;
+        for (Map<String, Object> o : rows) {
+            if (skip.contains(num(o.get("id")))) {
+                continue;
+            }
+            TemplateFile tf = new TemplateFile();
+            tf.setId(num(o.get("id")));
+            tf.setTemplateId(num(o.get("templateId")));
+            tf.setFileKey(str(o.get("fileKey")));
+            tf.setRemark(str(o.get("remark")));
+            tf.setStoragePath(str(o.get("storagePath")));
+            tf.setOriginalName(str(o.get("originalName")));
+            tf.setMimeType(str(o.get("mimeType")));
+            tf.setSize(longval(o.get("size")));
+            tf.setSha256(str(o.get("sha256")));
+            tf.setCreatedBy(num(o.get("createdBy")));
+            tf.setCreatedAt(instant(o.get("createdAt")));
+            tf.setUpdatedAt(instant(o.get("updatedAt")));
+            templateFileMapper.insert(tf);
             n++;
         }
         return n;
@@ -1525,14 +1608,22 @@ public class BackupService {
              TarArchiveInputStream tar = new TarArchiveInputStream(gz)) {
             TarArchiveEntry e;
             while ((e = tar.getNextTarEntry()) != null) {
-                if (!e.getName().startsWith(FILES_DIR) || e.isDirectory()) {
+                if (e.isDirectory()) {
                     continue;
                 }
-                String rel = e.getName().substring(FILES_DIR.length());
-                Path target = Paths.get(props.getStorage().getRoot(), rel);
-                Files.createDirectories(target.getParent());
-                Files.copy(tar, target, StandardCopyOption.REPLACE_EXISTING);
-                n++;
+                if (e.getName().startsWith(FILES_DIR)) {
+                    String rel = e.getName().substring(FILES_DIR.length());
+                    Path target = Paths.get(props.getStorage().getRoot(), rel);
+                    Files.createDirectories(target.getParent());
+                    Files.copy(tar, target, StandardCopyOption.REPLACE_EXISTING);
+                    n++;
+                } else if (e.getName().startsWith(TEMPLATE_FILES_DIR)) {
+                    String rel = e.getName().substring(TEMPLATE_FILES_DIR.length());
+                    Path target = Paths.get(props.getStorage().getRoot(), rel);
+                    Files.createDirectories(target.getParent());
+                    Files.copy(tar, target, StandardCopyOption.REPLACE_EXISTING);
+                    n++;
+                }
             }
         } catch (IOException ex) {
             log.warn("extract file binaries partially failed: {}", ex.getMessage());
@@ -1616,6 +1707,8 @@ public class BackupService {
         public List<Map<String, Object>> fileVersions = new ArrayList<>();
         public List<Map<String, Object>> templates = new ArrayList<>();
         public List<Map<String, Object>> templateVars = new ArrayList<>();
+        /** v3 新增：模板文件元数据（二进制在 template-files/ 下） */
+        public List<Map<String, Object>> templateFiles = new ArrayList<>();
         public List<Map<String, Object>> tokens = new ArrayList<>();
         /** v2 新增：MCP 个人令牌（仅 hash） */
         public List<Map<String, Object>> pats = new ArrayList<>();

@@ -4,7 +4,6 @@ import ci.fcloud.manager.common.BizException;
 import ci.fcloud.manager.common.SecurityUtils;
 import ci.fcloud.manager.config.FcloudProperties;
 import ci.fcloud.manager.module.Module;
-import ci.fcloud.manager.module.ModuleMapper;
 import ci.fcloud.manager.module.ModuleService;
 import ci.fcloud.manager.module.PermissionService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -20,6 +19,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -89,15 +92,6 @@ public class FileService extends ServiceImpl<ModuleFileMapper, ModuleFile> {
         validateModuleTotal(moduleId, multipart.getSize());
 
         Module m = moduleService.requireById(moduleId);
-        // §2.4 存储路径首段：私有模块用应用 code，共享模块用 _shared
-        String appCode;
-        if (m.getApplicationId() == null) {
-            appCode = "_shared";
-        } else {
-            ci.fcloud.manager.app.Application a = applicationMapper.selectById(m.getApplicationId());
-            appCode = a == null ? String.valueOf(m.getApplicationId()) : a.getCode();
-        }
-        String envCode = envCode(environmentId);
 
         ModuleFile file = lambdaQuery()
                 .eq(ModuleFile::getModuleId, moduleId)
@@ -112,6 +106,7 @@ public class FileService extends ServiceImpl<ModuleFileMapper, ModuleFile> {
             file.setFileKey(fileKey);
             file.setRemark(remark);
             file.setCurrentVersion(0);
+            file.setOrigin("MODULE");
             file.setCreatedBy(SecurityUtils.currentUserId());
             save(file);
             nextVersion = 1;
@@ -120,11 +115,8 @@ public class FileService extends ServiceImpl<ModuleFileMapper, ModuleFile> {
         }
 
         // §2.4 路径：{storage.root}/{appCode 或 _shared}/{moduleCode}/{envCode}/v{version}/{fileKey}
-        Path dir = Paths.get(props.getStorage().getRoot(), appCode, m.getCode(), envCode,
-                "v" + nextVersion);
-        Path target = resolveTarget(dir, fileKey);
+        Path target = targetFor(m, environmentId, nextVersion, fileKey);
         try {
-            // fileKey 允许带子路径（历史项目按阶段分目录），父目录要一起建
             Files.createDirectories(target.getParent());
             try (InputStream in = multipart.getInputStream()) {
                 Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
@@ -136,16 +128,18 @@ public class FileService extends ServiceImpl<ModuleFileMapper, ModuleFile> {
         FileVersion fv = new FileVersion();
         fv.setFileId(file.getId());
         fv.setVersion(nextVersion);
-        fv.setStoragePath(String.valueOf(
-                Paths.get(props.getStorage().getRoot()).relativize(target)));
+        fv.setStoragePath(relative(target));
         fv.setOriginalName(multipart.getOriginalFilename() == null
                 ? fileKey : multipart.getOriginalFilename());
         fv.setMimeType(multipart.getContentType());
         fv.setSize(multipart.getSize());
+        fv.setSha256(sha256(target));
         fv.setUploadedBy(SecurityUtils.currentUserId());
         versionMapper.insert(fv);
 
         file.setCurrentVersion(nextVersion);
+        // 用户手动上传即接管该 key：即使它原先来自模板，也不再被模板同步覆盖。
+        file.setOrigin("MODULE");
         if (remark != null) {
             file.setRemark(remark);
         }
@@ -163,7 +157,7 @@ public class FileService extends ServiceImpl<ModuleFileMapper, ModuleFile> {
      * 两个 key（`deployment.yaml` 与 `deployment/deployment.yaml`），
      * 后续谁覆盖谁说不清。真正需要区分就改文件名。</p>
      */
-    static String requireFlatFileKey(String fileKey) {
+    public static String requireFlatFileKey(String fileKey) {
         String key = fileKey == null ? "" : fileKey.trim();
         if (key.isEmpty()) {
             throw BizException.badRequest("fileKey 不能为空");
@@ -184,7 +178,7 @@ public class FileService extends ServiceImpl<ModuleFileMapper, ModuleFile> {
      * <p>key 已由 {@link #requireFlatFileKey} 限制为扁平文件名，这里仍然做一次
      * 归一化与越界校验，防止绕过校验的调用把文件写到 storage root 之外。</p>
      */
-    static Path resolveTarget(Path versionDir, String fileKey) {
+    public static Path resolveTarget(Path versionDir, String fileKey) {
         Path base = versionDir.normalize();
         Path target = base.resolve(fileKey).normalize();
         if (target.equals(base) || !target.startsWith(base)) {
@@ -256,8 +250,15 @@ public class FileService extends ServiceImpl<ModuleFileMapper, ModuleFile> {
         permissionService.requireCanDelete();
         ModuleFile f = requireById(fileId);
         permissionService.requireCanEdit(f.getModuleId());
-        List<FileVersion> versions = versionsOf(fileId);
-        for (FileVersion v : versions) {
+        deleteInternal(f);
+    }
+
+    /**
+     * 不做权限校验的删除，供模板同步内部使用（调用方已校验系统管理员）。
+     */
+    @Transactional
+    public void deleteInternal(ModuleFile file) {
+        for (FileVersion v : versionsOf(file.getId())) {
             try {
                 Files.deleteIfExists(Paths.get(props.getStorage().getRoot(), v.getStoragePath()));
             } catch (IOException e) {
@@ -265,7 +266,130 @@ public class FileService extends ServiceImpl<ModuleFileMapper, ModuleFile> {
             }
             versionMapper.deleteById(v.getId());
         }
-        removeById(fileId);
+        removeById(file.getId());
+    }
+
+    /**
+     * 把模板文件实体化成模块文件版本。
+     *
+     * <p>调用方必须先确认同 key 的模块文件不是 {@code origin = MODULE}，
+     * 否则会覆盖模块自有内容。内容 sha256 一致时不产生新版本，只更新备注。</p>
+     *
+     * @return 实际写入的模块文件；内容未变化且备注未变时返回 null
+     */
+    @Transactional
+    public ModuleFile materializeFromTemplate(Long moduleId, Long environmentId,
+                                              String fileKey, Path source,
+                                              String originalName, String mimeType,
+                                              String sha256, String remark) {
+        Module m = moduleService.requireById(moduleId);
+        ModuleFile file = lambdaQuery()
+                .eq(ModuleFile::getModuleId, moduleId)
+                .eq(ModuleFile::getEnvironmentId, environmentId)
+                .eq(ModuleFile::getFileKey, fileKey)
+                .one();
+        if (file != null && !"TEMPLATE".equals(file.getOrigin())) {
+            // 模块自有内容优先：由调用方按冲突计数，不抛异常中断整批绑定。
+            return null;
+        }
+        if (file == null) {
+            file = new ModuleFile();
+            file.setModuleId(moduleId);
+            file.setEnvironmentId(environmentId);
+            file.setFileKey(fileKey);
+            file.setRemark(remark);
+            file.setCurrentVersion(0);
+            file.setOrigin("TEMPLATE");
+            file.setCreatedBy(SecurityUtils.currentUserId());
+            save(file);
+        } else {
+            FileVersion current = versionMapper.selectOne(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<FileVersion>()
+                            .eq(FileVersion::getFileId, file.getId())
+                            .eq(FileVersion::getVersion, file.getCurrentVersion()));
+            if (current != null && sha256 != null && sha256.equals(current.getSha256())) {
+                if (remark != null && !remark.equals(file.getRemark())) {
+                    file.setRemark(remark);
+                    updateById(file);
+                    return file;
+                }
+                return null;
+            }
+        }
+
+        int nextVersion = (file.getCurrentVersion() == null ? 0 : file.getCurrentVersion()) + 1;
+        Path target = targetFor(m, environmentId, nextVersion, fileKey);
+        try {
+            Files.createDirectories(target.getParent());
+            Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new BizException(50000, "模板文件写入失败");
+        }
+
+        FileVersion fv = new FileVersion();
+        fv.setFileId(file.getId());
+        fv.setVersion(nextVersion);
+        fv.setStoragePath(relative(target));
+        fv.setOriginalName(originalName == null ? fileKey : originalName);
+        fv.setMimeType(mimeType);
+        fv.setSize(Files.exists(target) ? sizeOf(target) : 0L);
+        fv.setSha256(sha256);
+        fv.setUploadedBy(SecurityUtils.currentUserId());
+        versionMapper.insert(fv);
+
+        file.setCurrentVersion(nextVersion);
+        if (remark != null) {
+            file.setRemark(remark);
+        }
+        updateById(file);
+        pruneOldVersions(file, nextVersion);
+        return file;
+    }
+
+    /** 相对 storage.root 的路径，统一用 / 分隔，跨平台可读 */
+    private String relative(Path target) {
+        return String.valueOf(Paths.get(props.getStorage().getRoot()).relativize(target))
+                .replace('\\', '/');
+    }
+
+    /**
+     * 模块文件的版本落盘路径。
+     */
+    private Path targetFor(Module m, Long environmentId, int version, String fileKey) {
+        String appCode;
+        if (m.getApplicationId() == null) {
+            appCode = "_shared";
+        } else {
+            ci.fcloud.manager.app.Application a =
+                    applicationMapper.selectById(m.getApplicationId());
+            appCode = a == null ? String.valueOf(m.getApplicationId()) : a.getCode();
+        }
+        Path dir = Paths.get(props.getStorage().getRoot(), appCode, m.getCode(),
+                envCode(environmentId), "v" + version);
+        return resolveTarget(dir, fileKey);
+    }
+
+    private static long sizeOf(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException e) {
+            return 0L;
+        }
+    }
+
+    /** SHA-256（hex，小写）。读取失败返回 null，同步时退化为版本号比较。 */
+    public static String sha256(Path path) {
+        try (InputStream in = Files.newInputStream(path);
+             DigestInputStream dis = new DigestInputStream(in,
+                     MessageDigest.getInstance("SHA-256"))) {
+            byte[] buf = new byte[8192];
+            while (dis.read(buf) > 0) {
+                // digest 由 DigestInputStream 累积
+            }
+            return HexFormat.of().formatHex(dis.getMessageDigest().digest());
+        } catch (IOException | NoSuchAlgorithmException e) {
+            return null;
+        }
     }
 
     /**

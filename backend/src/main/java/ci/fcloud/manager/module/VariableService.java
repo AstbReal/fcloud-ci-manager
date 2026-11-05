@@ -64,6 +64,7 @@ public class VariableService extends ServiceImpl<VariableMapper, Variable> {
         v.setRemark(body.getRemark());
         v.setIsRequired(Boolean.TRUE.equals(body.getIsRequired()));
         v.setSortOrder(body.getSortOrder() == null ? nextSortOrder(moduleId) : body.getSortOrder());
+        v.setOrigin("MODULE");
         v.setCreatedBy(SecurityUtils.currentUserId());
 
         // §2.1 全局值：与"环境覆盖"二选一；加密变量存密文

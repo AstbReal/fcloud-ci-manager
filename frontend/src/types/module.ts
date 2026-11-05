@@ -27,6 +27,8 @@ export interface MatrixRow {
   remark?: string
   isRequired: boolean
   sortOrder: number
+  /** MODULE = 模块自有 / TEMPLATE = 模板下发 */
+  origin?: 'MODULE' | 'TEMPLATE'
   createdBy?: Id
   canReveal: boolean
   cells: Record<string, MatrixCell>

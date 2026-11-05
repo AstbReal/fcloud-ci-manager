@@ -67,10 +67,6 @@ public class JwtService {
         }
     }
 
-    public String jti(Claims claims) {
-        return claims.getId();
-    }
-
     /** 剩余有效期（秒），用于注销黑名单 TTL（§6.2）。 */
     public long remainingSeconds(Claims claims) {
         Instant exp = claims.getExpiration().toInstant();

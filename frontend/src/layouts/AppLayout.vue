@@ -99,12 +99,12 @@ interface MenuItem {
 const navWork: MenuItem[] = [
   { path: '/', label: '工作台', icon: 'home' },
   { path: '/applications', label: '应用看板', icon: 'grid' },
-  { path: '/modules', label: '模块', icon: 'layers' },
-  // Token 是个人资产：AI 访问令牌人人可管，流水线 Token 在页内按角色隐藏
-  { path: '/tokens', label: 'Token 管理', icon: 'key' }
+  { path: '/modules', label: '模块', icon: 'layers' }
 ]
 const navConfig: MenuItem[] = [
   { path: '/templates', label: '模板库', icon: 'book', admin: true },
+  // Token 是个人资产：AI 访问令牌人人可管，流水线 Token 在页内按角色隐藏
+  { path: '/tokens', label: 'Token 管理', icon: 'key' },
   { path: '/environments', label: '环境管理', icon: 'sliders', admin: true }
 ]
 const navSystem: MenuItem[] = [
@@ -318,12 +318,6 @@ onMounted(() => {
   box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
 }
 
-.ver {
-  margin-left: auto;
-  font-family: var(--mono);
-  font-size: 10.5px;
-}
-
 .main {
   flex: 1;
   min-width: 0;
@@ -346,8 +340,27 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   font-size: 13px;
   color: var(--text-3);
+}
+
+/* 窄屏下品牌名先让位，避免面包屑与用户名被挤成多行 */
+@media (max-width: 600px) {
+  .crumb-home,
+  .crumb .sep {
+    display: none;
+  }
+
+  .crumb b {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .user-name {
+    display: none;
+  }
 }
 
 .topbar-right {
@@ -388,6 +401,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
   cursor: pointer;
   outline: none;
 }
@@ -417,8 +432,7 @@ onMounted(() => {
 @media (max-width: 1023px) {
   .brand-text,
   .nav-text,
-  .health-text,
-  .ver {
+  .health-text {
     display: none;
   }
 

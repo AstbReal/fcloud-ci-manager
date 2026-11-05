@@ -4,12 +4,14 @@
       <div>
         <h2 class="fc-page-title">模板库</h2>
         <div class="fc-page-subtitle">
-          模板定义变量骨架；模块保持关联，按 diff 选择性同步。
+          模板定义变量与文件；模块保持关联，按 diff 选择性同步。
         </div>
       </div>
-      <button class="btn btn-primary" @click="openCreate">
-        <ProtoIcon name="plus" :size="15" />新建模板
-      </button>
+      <div class="ph-actions">
+        <button class="btn btn-primary" @click="openCreate">
+          <ProtoIcon name="plus" :size="15" />新建模板
+        </button>
+      </div>
     </div>
 
     <div v-if="!loading && !templates.length" class="card fc-empty">
@@ -18,6 +20,14 @@
       <p class="muted" style="font-size: 12.5px">
         新建一个变量定义集合，或从已有模块另存为模板。
       </p>
+      <button
+        v-if="canSaveAs"
+        class="btn btn-sm"
+        style="margin-top: 12px"
+        @click="openSaveAs"
+      >
+        从模块另存
+      </button>
     </div>
 
     <div v-else class="split">
@@ -56,7 +66,9 @@
             >
               <div class="li-main">
                 <div class="t">{{ t.name }}</div>
-                <div class="s">{{ t.code }} · {{ t.varCount || 0 }} 变量</div>
+                <div class="s">
+                  {{ t.code }} · {{ t.varCount || 0 }} 变量 · {{ t.fileCount || 0 }} 文件
+                </div>
               </div>
               <span v-if="Number(t.pendingModules) > 0" class="tag tag-warn">
                 {{ t.pendingModules }} 模块待同步
@@ -75,10 +87,10 @@
             </div>
           </div>
           <div class="head-actions">
-            <button class="btn btn-sm" @click="openSaveAs">从模块另存</button>
-            <button class="btn btn-sm btn-primary" @click="openEdit(current)">
-              编辑定义
+            <button class="btn btn-sm btn-primary" @click="openDistribute">
+              下发到模块
             </button>
+            <button class="btn btn-sm" @click="openEdit(current)">编辑定义</button>
             <el-dropdown trigger="click" @command="onCommand">
               <button class="icon-btn"><ProtoIcon name="more" :size="15" /></button>
               <template #dropdown>
@@ -130,11 +142,108 @@
           </tbody>
         </table>
 
+        <div class="tpl-files">
+          <div class="tpl-files-head">
+            <div class="tsec-title">
+              文件定义<span class="cnt">{{ detailFiles.length }}</span>
+            </div>
+            <div class="tsec-actions">
+              <button class="btn btn-sm" :disabled="fileUploading" @click="pickFile">
+                <ProtoIcon name="upload" :size="14" />
+                {{ fileUploading ? '上传中…' : '上传文件' }}
+              </button>
+              <input
+                ref="fileInput"
+                class="hidden-file"
+                type="file"
+                @change="onFilePicked"
+              />
+            </div>
+          </div>
+
+          <table class="def-table file-def-table">
+            <thead>
+              <tr>
+                <th>文件名</th>
+                <th style="width: 92px">大小</th>
+                <th>备注</th>
+                <th style="width: 48px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="f in detailFiles" :key="f.id">
+                <td class="mono strong">{{ f.fileKey }}</td>
+                <td class="muted">{{ fmtSize(f.size) }}</td>
+                <td class="muted">{{ f.remark || '—' }}</td>
+                <td>
+                  <button class="row-del" title="删除文件" @click="removeFile(f)">
+                    <ProtoIcon name="x" :size="14" />
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="!detailFiles.length">
+                <td colspan="4" class="empty-row">
+                  还没有模板文件。上传后会下发到模块已绑定的每个环境。
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="tpl-files bind-sec">
+          <div class="tpl-files-head">
+            <div class="tsec-title">
+              已绑定模块<span class="cnt">{{ bindings.length }}</span>
+            </div>
+            <span v-if="pendingBindings" class="tag tag-warn">
+              {{ pendingBindings }} 个待同步
+            </span>
+            <span v-else-if="bindings.length" class="muted small">全部已同步</span>
+          </div>
+
+          <div class="bind-scroll">
+            <table class="def-table">
+              <thead>
+                <tr>
+                  <th>应用</th>
+                  <th style="width: 110px">模块</th>
+                  <th style="width: 150px">上次同步</th>
+                  <th style="width: 78px">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="b in bindings" :key="b.moduleId">
+                  <td>
+                    <span class="mono">{{ b.applicationCode || '—' }}</span>
+                    <span v-if="b.applicationName" class="muted"> · {{ b.applicationName }}</span>
+                  </td>
+                  <td>
+                    <router-link class="mono strong bind-link" :to="`/modules/${b.moduleId}`">
+                      {{ b.moduleCode }}
+                    </router-link>
+                  </td>
+                  <td class="muted">{{ b.syncedAt ? fmt(b.syncedAt || undefined) : '—' }}</td>
+                  <td>
+                    <span class="tag" :class="b.pending ? 'tag-warn' : 'tag-ok'">
+                      {{ b.pending ? '待同步' : '已同步' }}
+                    </span>
+                  </td>
+                </tr>
+                <tr v-if="!bindings.length">
+                  <td colspan="4" class="empty-row">
+                    还没有模块绑定此模板，用右上「下发到模块」关联已有模块。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <div class="card-foot">
-          <span>实例化后：明文默认值写入全局值，加密类型默认值不落库</span>
-          <button class="btn btn-sm" @click="openInstantiate(current)">
-            用此模板建模块
-          </button>
+          <span>
+            下发到模块：新建模块会整份复制变量定义，并把文件下发到已绑定的每个环境；
+            绑定已有模块只补缺失项，同名变量/文件保留模块自有。
+          </span>
         </div>
       </div>
     </div>
@@ -146,6 +255,11 @@
       size="760px"
       :before-close="beforeClose"
     >
+      <div v-if="!form.id && canSaveAs" class="alt-entry">
+        <span>已经有模块配好了变量和文件？</span>
+        <button class="link-btn" @click="switchToSaveAs">直接从模块另存</button>
+      </div>
+
       <section class="tsec">
         <div class="tsec-head">
           <div class="tsec-title">基本信息</div>
@@ -179,7 +293,6 @@
             filterable
             allow-create
             clearable
-            default-first-option
             placeholder="选择已有分组，或直接输入新名称"
             style="width: 100%"
           >
@@ -356,7 +469,12 @@
           </el-select>
         </el-form-item>
         <el-form-item label="来源模块" required>
-          <el-select v-model="saveAsForm.moduleId" filterable style="width: 100%">
+          <el-select
+            v-model="saveAsForm.moduleId"
+            filterable
+            style="width: 100%"
+            @change="onSaveAsModuleChange"
+          >
             <el-option
               v-for="m in saveAsModules"
               :key="m.id"
@@ -377,8 +495,7 @@
             filterable
             allow-create
             clearable
-            default-first-option
-            placeholder="数据库 / 消息 / 缓存…"
+            placeholder="选择已有分组，或直接输入新名称"
             style="width: 100%"
           >
             <el-option v-for="g in groupOptions" :key="g" :label="g" :value="g" />
@@ -394,64 +511,246 @@
       </template>
     </el-dialog>
 
-    <!-- 实例化 -->
-    <el-dialog v-model="instDialog" title="用此模板建模块" width="460px">
-      <el-form label-position="top">
-        <el-form-item label="目标应用" required>
-          <el-select v-model="instForm.applicationId" filterable style="width: 100%">
-            <el-option
-              v-for="a in applications"
-              :key="a.id"
-              :label="`${a.name} (${a.code})`"
-              :value="a.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="模块 Code" required>
-          <el-input v-model="instForm.code" placeholder="db-config" />
-        </el-form-item>
-        <el-form-item label="模块名称">
-          <el-input v-model="instForm.name" />
-        </el-form-item>
-        <el-form-item label="分组">
-          <el-select
-            v-model="instForm.groupName"
-            filterable
-            allow-create
-            clearable
-            default-first-option
-            placeholder="选择已有分组，或直接输入新名称"
-            style="width: 100%"
+    <!-- 下发到模块：新建 or 绑定已有，两种落地方式收在一个入口 -->
+    <el-dialog
+      v-model="distDialog"
+      title="下发到模块"
+      width="820px"
+      @closed="resetDist"
+    >
+      <div class="dist-bar">
+        <div class="dist-tpl">
+          <span class="dist-tpl-name">{{ current?.name }}</span>
+          <span class="dist-tpl-meta mono">
+            {{ current?.code }} · {{ detailVars.length }} 变量 · {{ detailFiles.length }} 文件
+          </span>
+        </div>
+        <div class="dist-modes">
+          <button
+            class="dist-mode"
+            :class="{ on: distMode === 'new' }"
+            :disabled="!canCreateModule"
+            :title="canCreateModule ? '' : '至少需要一个应用和一个环境'"
+            @click="setDistMode('new')"
           >
-            <el-option v-for="g in moduleGroups" :key="g" :label="g" :value="g" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="绑定环境" required>
-          <el-select
-            v-model="instForm.environmentIds"
-            multiple
-            collapse-tags
-            collapse-tags-tooltip
-            style="width: 100%"
-            placeholder="选择模块要覆盖的环境"
+            新建模块
+          </button>
+          <button
+            class="dist-mode"
+            :class="{ on: distMode === 'bind' }"
+            :disabled="!canBindExisting"
+            :title="canBindExisting ? '' : '当前没有可按 code 匹配的私有模块'"
+            @click="setDistMode('bind')"
           >
-            <el-option
-              v-for="e in envs"
-              :key="e.id"
-              :label="`${e.name} · ${e.code}`"
-              :value="e.id"
-            />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <p class="dialog-note">
-        明文默认值会写入模块变量的全局值；加密类型的默认值不落库。
+            已有模块
+          </button>
+        </div>
+      </div>
+
+      <p v-if="!distReady" class="dist-warn">
+        还没有可下发的目标：先到「应用看板」创建应用，或到「环境管理」创建环境。
       </p>
+      <p v-else-if="!distHasContent" class="dist-warn">
+        这个模板还没有变量和文件，下发只会建立关联；等模板补齐内容后再同步即可。
+      </p>
+
+      <template v-if="distMode === 'new'">
+        <el-form label-position="top">
+          <div class="fld-grid">
+            <el-form-item label="目标应用" required>
+              <el-select v-model="instForm.applicationId" filterable style="width: 100%">
+                <el-option
+                  v-for="a in applications"
+                  :key="a.id"
+                  :label="`${a.name} (${a.code})`"
+                  :value="a.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="模块 Code" required>
+              <el-input v-model="instForm.code" placeholder="db-config" />
+            </el-form-item>
+            <el-form-item label="模块名称">
+              <el-input v-model="instForm.name" />
+            </el-form-item>
+            <el-form-item label="分组">
+              <el-select
+                v-model="instForm.groupName"
+                filterable
+                allow-create
+                clearable
+                placeholder="选择已有分组，或直接输入新名称"
+                style="width: 100%"
+              >
+                <el-option v-for="g in moduleGroups" :key="g" :label="g" :value="g" />
+              </el-select>
+            </el-form-item>
+          </div>
+          <el-form-item label="绑定环境" required>
+            <div class="env-row">
+              <el-select
+                v-model="instForm.environmentIds"
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
+                style="width: 100%"
+                placeholder="选择模块要覆盖的环境"
+              >
+                <el-option
+                  v-for="e in envs"
+                  :key="e.id"
+                  :label="`${e.name} · ${e.code}`"
+                  :value="e.id"
+                />
+              </el-select>
+              <button v-if="envs.length > 1" class="link-btn" @click="toggleAllEnvs">
+                {{ allEnvsPicked ? '全不选' : '全选' }}
+              </button>
+            </div>
+            <p class="field-hint">
+              环境绑定在新建出来的模块上：变量矩阵按环境生成列，模板文件复制到每个选中环境；
+              一个都不绑就只有全局值，流水线取不到配置。
+            </p>
+          </el-form-item>
+        </el-form>
+        <p class="dialog-note">
+          会新建模块并建立关联：变量定义整份复制，明文默认值写入全局值，文件下发到上面选中的环境。
+        </p>
+      </template>
+
+      <template v-else>
+        <p class="dialog-note" style="margin: 0 0 12px">
+          按模块 code 匹配应用下已有的私有模块。同名变量/文件保留模块自有，模板只补缺失项。
+        </p>
+
+        <el-form label-position="top">
+          <div class="fld-grid">
+            <el-form-item label="目标模块 code" required>
+              <el-input v-model="bindModuleCode" placeholder="scc / image / build" />
+            </el-form-item>
+            <el-form-item label="应用范围">
+              <el-select
+                v-model="bindAppIds"
+                multiple
+                filterable
+                collapse-tags
+                collapse-tags-tooltip
+                placeholder="不选 = 全部应用"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="a in applications"
+                  :key="a.id"
+                  :label="`${a.name} (${a.code})`"
+                  :value="a.id"
+                />
+              </el-select>
+            </el-form-item>
+          </div>
+          <p class="field-hint">
+            环境沿用模块自身的绑定，这里不改动：模板文件只会下发到模块已绑定的环境。
+          </p>
+        </el-form>
+
+        <div class="bind-actions">
+          <button
+            class="btn btn-sm"
+            :disabled="!bindModuleCode.trim() || bindPreviewLoading"
+            @click="previewBatch"
+          >
+            {{ bindPreviewLoading ? '预览中…' : '生成预览' }}
+          </button>
+          <span class="muted">
+            {{
+              bindPreviewRows.length
+                ? `匹配 ${bindPreviewRows.length} 个模块`
+                : bindPreviewed
+                  ? '未匹配到模块'
+                  : '先预览再绑定'
+            }}
+          </span>
+        </div>
+
+        <p v-if="zeroEnvModules" class="dist-warn">
+          有 {{ zeroEnvModules }} 个模块还没绑定环境，模板文件不会下发；先到模块详情绑定环境再回来绑定。
+        </p>
+
+        <table v-if="bindPreviewRows.length" class="def-table bind-table">
+          <thead>
+            <tr>
+              <th>应用</th>
+              <th style="width: 90px">模块</th>
+              <th style="width: 100px">状态</th>
+              <th style="width: 70px">新增变量</th>
+              <th style="width: 70px">自有变量</th>
+              <th style="width: 70px">新增文件</th>
+              <th style="width: 70px">自有文件</th>
+              <th style="width: 62px">环境</th>
+              <th style="width: 82px">同应用冲突</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in bindPreviewRows" :key="r.moduleId">
+              <td class="mono">{{ r.applicationCode || '—' }}</td>
+              <td class="mono">{{ r.moduleCode }}</td>
+              <td>
+                <span class="tag" :class="bindStatusClass(r.status)">
+                  {{ bindStatusText(r.status) }}
+                </span>
+              </td>
+              <td class="num">{{ r.addedVars }}</td>
+              <td class="num" :class="{ muted: !r.varConflicts }">{{ r.varConflicts }}</td>
+              <td class="num">{{ r.addedFiles }}</td>
+              <td class="num" :class="{ muted: !r.fileConflicts }">{{ r.fileConflicts }}</td>
+              <td class="num">
+                <span
+                  v-if="!r.envCount"
+                  class="tag tag-warn"
+                  title="模块还没有绑定环境，模板文件不会下发"
+                >
+                  0
+                </span>
+                <span v-else>{{ r.envCount }}</span>
+              </td>
+              <td class="num" :class="{ muted: !r.appConflicts }">{{ r.appConflicts }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <el-empty
+          v-else-if="bindPreviewed && !bindPreviewLoading"
+          :description="`没有匹配的私有模块：确认所选应用下存在 code 为「${bindModuleCode.trim()}」的私有模块`"
+          :image-size="40"
+        />
+        <el-empty
+          v-else-if="!bindPreviewLoading"
+          description="填写模块 code 后生成预览"
+          :image-size="40"
+        />
+
+        <el-alert type="info" :closable="false" show-icon style="margin-top: 12px">
+          <template #title>绑定不会覆盖已有值</template>
+          同名变量/文件保持模块自有；解绑时默认保留已下发内容。
+        </el-alert>
+      </template>
+
       <template #footer>
-        <el-button @click="instDialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="doInstantiate">
-          实例化
-        </el-button>
+        <button class="btn" @click="distDialog = false">取消</button>
+        <button
+          v-if="distMode === 'new'"
+          class="btn btn-primary"
+          :disabled="!canInstantiate || saving"
+          @click="doInstantiate"
+        >
+          {{ saving ? '创建中…' : '创建并下发' }}
+        </button>
+        <button
+          v-else
+          class="btn btn-primary"
+          :disabled="!bindReadyCount || bindApplying"
+          @click="applyBatchBind"
+        >
+          {{ bindApplying ? '绑定中…' : `绑定 ${bindReadyCount} 个模块` }}
+        </button>
       </template>
     </el-dialog>
   </div>
@@ -465,7 +764,14 @@ import { Lock } from '@element-plus/icons-vue'
 import ProtoIcon from '@/components/ProtoIcon.vue'
 import { api } from '@/api/http'
 import { envApi } from '@/api'
-import { templateApi, type TemplateItem, type TemplateVar } from '@/api'
+import {
+  templateApi,
+  type TemplateBatchBindItem,
+  type TemplateBindingItem,
+  type TemplateFileItem,
+  type TemplateItem,
+  type TemplateVar
+} from '@/api'
 import type { Id } from '@/types/id'
 
 type VarRow = TemplateVar & { _k: string }
@@ -490,6 +796,20 @@ const templates = ref<TemplateItem[]>([])
 const applications = ref<BoardAppLite[]>([])
 const currentId = ref<Id | null>(null)
 const detailVars = ref<TemplateVar[]>([])
+const detailFiles = ref<TemplateFileItem[]>([])
+const bindings = ref<TemplateBindingItem[]>([])
+const pendingBindings = computed(() => bindings.value.filter((b) => b.pending).length)
+const fileInput = ref<HTMLInputElement | null>(null)
+const fileUploading = ref(false)
+
+const distDialog = ref(false)
+const distMode = ref<'new' | 'bind'>('new')
+const bindPreviewed = ref(false)
+const bindModuleCode = ref('')
+const bindAppIds = ref<Id[]>([])
+const bindPreviewRows = ref<TemplateBatchBindItem[]>([])
+const bindPreviewLoading = ref(false)
+const bindApplying = ref(false)
 
 const drawer = ref(false)
 const pasteOpen = ref(false)
@@ -498,7 +818,6 @@ const vtableEl = ref<HTMLElement | null>(null)
 const dragIndex = ref<number | null>(null)
 const dragArmed = ref<number | null>(null)
 const snapshot = ref('')
-const instDialog = ref(false)
 const saveAsDialog = ref(false)
 const saving = ref(false)
 
@@ -534,7 +853,14 @@ const current = computed(
   () => templates.value.find((t) => t.id === currentId.value) || null
 )
 
-const groupOptions = ['数据库', '消息', '缓存', '基础', '业务']
+/** 只提供库里已存在的分组，不预置任何默认项 */
+const groupOptions = computed(() => {
+  const set = new Set<string>()
+  for (const t of templates.value) {
+    if (t.groupName) set.add(t.groupName)
+  }
+  return Array.from(set)
+})
 
 const grouped = computed(() => {
   const order: string[] = []
@@ -566,6 +892,11 @@ const saveAsModules = computed(
       ?.privateModules || []
 )
 
+/** 没有任何私有模块时，「从模块另存」无源可选，入口直接不出现 */
+const canSaveAs = computed(() =>
+  applications.value.some((a) => (a.privateModules || []).length > 0)
+)
+
 function isCurrent(t: TemplateItem) {
   return t.id === currentId.value
 }
@@ -595,16 +926,26 @@ async function load() {
 async function loadDetail() {
   if (!currentId.value) {
     detailVars.value = []
+    detailFiles.value = []
+    bindings.value = []
     return
   }
   const d = await templateApi.detail(currentId.value)
   detailVars.value = d.vars || []
+  detailFiles.value = d.files || []
+  try {
+    bindings.value = await templateApi.bindings(currentId.value)
+  } catch {
+    bindings.value = []
+  }
 }
 
 async function select(t: TemplateItem) {
   if (t.id === currentId.value) return
   currentId.value = t.id
   detailVars.value = []
+  detailFiles.value = []
+  bindings.value = []
   await loadDetail()
 }
 
@@ -917,14 +1258,37 @@ async function remove(row: TemplateItem) {
   }
 }
 
-function openInstantiate(row: TemplateItem) {
-  instForm.templateId = row.id
+/** 下发入口：默认落在「新建模块」，没有可用模块时切到「已有模块」 */
+function openDistribute() {
+  if (!current.value) return
+  instForm.templateId = current.value.id
   instForm.applicationId = applications.value[0]?.id
-  instForm.code = row.code
-  instForm.name = row.name
+  instForm.code = current.value.code
+  instForm.name = current.value.name
   instForm.groupName = ''
   instForm.environmentIds = envs.value.map((e) => e.id)
-  instDialog.value = true
+  bindModuleCode.value = current.value.code
+  resetBindDialog()
+  distMode.value = canCreateModule.value ? 'new' : 'bind'
+  distDialog.value = true
+}
+
+function setDistMode(mode: 'new' | 'bind') {
+  if (mode === 'bind' && !canBindExisting.value) return
+  if (mode === 'new' && !canCreateModule.value) return
+  if (distMode.value === mode) return
+  distMode.value = mode
+  // 切换模式时丢掉上一次预览，避免看到别的模式的结果
+  resetBindDialog()
+}
+
+function resetDist() {
+  resetBindDialog()
+  saving.value = false
+}
+
+function toggleAllEnvs() {
+  instForm.environmentIds = allEnvsPicked.value ? [] : envs.value.map((e) => e.id)
 }
 
 async function doInstantiate() {
@@ -945,8 +1309,8 @@ async function doInstantiate() {
       groupName: instForm.groupName || undefined,
       environmentIds: instForm.environmentIds
     })
-    ElMessage.success('已实例化')
-    instDialog.value = false
+    ElMessage.success('已创建并下发')
+    distDialog.value = false
     if (mod && (mod as { id?: Id }).id) {
       router.push(`/modules/${(mod as { id: Id }).id}`)
     }
@@ -955,21 +1319,34 @@ async function doInstantiate() {
   }
 }
 
+/** 从「新建模板」抽屉切到「从模块另存」：两者都是创建模板的入口 */
+function switchToSaveAs() {
+  drawer.value = false
+  openSaveAs()
+}
+
 function openSaveAs() {
   saveAsForm.applicationId = applications.value[0]?.id
   saveAsForm.moduleId = saveAsModules.value[0]?.id
   saveAsForm.code = ''
-  saveAsForm.name = ''
-  saveAsForm.groupName = current.value?.groupName || ''
-  if (current.value) {
-    saveAsForm.code = `${current.value.code}-copy`
-    saveAsForm.name = `${current.value.name}（副本）`
-  }
+  saveAsForm.name = saveAsNameOf(saveAsForm.moduleId)
+  saveAsForm.groupName = ''
   saveAsDialog.value = true
+}
+
+/** 名称按来源模块给个默认值；code 留空由用户填，避免和已有模板撞车 */
+function saveAsNameOf(moduleId?: Id) {
+  const m = saveAsModules.value.find((x) => x.id === moduleId)
+  return m?.name ? `${m.name} 模板` : ''
 }
 
 function onSaveAsAppChange() {
   saveAsForm.moduleId = saveAsModules.value[0]?.id
+  if (!saveAsForm.name) saveAsForm.name = saveAsNameOf(saveAsForm.moduleId)
+}
+
+function onSaveAsModuleChange() {
+  saveAsForm.name = saveAsNameOf(saveAsForm.moduleId)
 }
 
 async function doSaveAs() {
@@ -993,6 +1370,131 @@ async function doSaveAs() {
   } finally {
     saving.value = false
   }
+}
+
+const bindReadyCount = computed(
+  () => bindPreviewRows.value.filter((r) => r.status === 'READY').length
+)
+const zeroEnvModules = computed(
+  () => bindPreviewRows.value.filter((r) => !r.envCount).length
+)
+
+/* ---------- 下发到模块：两种落地方式的可用性判断 ---------- */
+const canCreateModule = computed(
+  () => !!applications.value.length && !!envs.value.length
+)
+const canBindExisting = computed(() =>
+  applications.value.some((a) => (a.privateModules || []).length > 0)
+)
+const canInstantiate = computed(
+  () =>
+    !!instForm.applicationId &&
+    !!instForm.code.trim() &&
+    instForm.environmentIds.length > 0
+)
+const allEnvsPicked = computed(
+  () => envs.value.length > 0 && instForm.environmentIds.length === envs.value.length
+)
+const distHasContent = computed(
+  () => detailVars.value.length > 0 || detailFiles.value.length > 0
+)
+const distReady = computed(() => canCreateModule.value || canBindExisting.value)
+
+function fmtSize(n?: number) {
+  if (!n) return '—'
+  if (n < 1024) return n + ' B'
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB'
+  return (n / 1024 / 1024).toFixed(2) + ' MB'
+}
+
+function pickFile() {
+  fileInput.value?.click()
+}
+
+async function onFilePicked(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !current.value) return
+  fileUploading.value = true
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('fileKey', file.name)
+    await templateApi.uploadFile(current.value.id, form)
+    ElMessage.success('模板文件已上传')
+    await load()
+  } finally {
+    fileUploading.value = false
+    input.value = ''
+  }
+}
+
+async function removeFile(f: TemplateFileItem) {
+  if (!current.value) return
+  try {
+    await ElMessageBox.confirm(
+      `删除模板文件「${f.fileKey}」？已下发到模块的副本不会自动删除，下次同步会出现在「模板已删除的文件」中。`,
+      '删除模板文件',
+      { type: 'warning', confirmButtonText: '删除' }
+    )
+    await templateApi.deleteFile(current.value.id, f.id)
+    ElMessage.success('已删除')
+    await load()
+  } catch {
+    // 取消
+  }
+}
+
+function resetBindDialog() {
+  bindAppIds.value = []
+  bindPreviewRows.value = []
+  bindPreviewed.value = false
+}
+
+async function previewBatch() {
+  if (!current.value || !bindModuleCode.value.trim()) return
+  bindPreviewLoading.value = true
+  bindPreviewed.value = false
+  try {
+    bindPreviewRows.value = await templateApi.previewBindBatch(current.value.id, {
+      moduleCode: bindModuleCode.value.trim(),
+      applicationIds: bindAppIds.value
+    })
+    bindPreviewed.value = true
+  } catch {
+    bindPreviewRows.value = []
+  } finally {
+    bindPreviewLoading.value = false
+  }
+}
+
+async function applyBatchBind() {
+  if (!current.value || !bindReadyCount.value) return
+  bindApplying.value = true
+  try {
+    const rows = await templateApi.bindBatch(current.value.id, {
+      moduleCode: bindModuleCode.value.trim(),
+      applicationIds: bindAppIds.value
+    })
+    bindPreviewRows.value = rows
+    ElMessage.success(`已绑定 ${rows.filter((r) => r.status === 'BOUND').length} 个模块`)
+    await load()
+  } finally {
+    bindApplying.value = false
+  }
+}
+
+function bindStatusText(status: TemplateBatchBindItem['status']) {
+  if (status === 'READY') return '待绑定'
+  if (status === 'BOUND') return '已绑定'
+  if (status === 'ALREADY') return '已绑此模板'
+  return '已绑其他模板'
+}
+
+function bindStatusClass(status: TemplateBatchBindItem['status']) {
+  if (status === 'READY' || status === 'BOUND') return 'tag-ok'
+  if (status === 'ALREADY') return 'tag-plain'
+  return 'tag-warn'
 }
 
 onMounted(async () => {
@@ -1248,6 +1750,43 @@ onMounted(async () => {
   border-top: 1px solid var(--border);
   font-size: 12.5px;
   color: var(--text-3);
+}
+
+.ph-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding-top: 2px;
+}
+
+/* 新建模板抽屉里的第二入口：从模块另存 */
+.alt-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  color: var(--primary-600);
+  text-decoration: underline;
 }
 
 .dialog-note {
@@ -1579,5 +2118,143 @@ onMounted(async () => {
   .split {
     grid-template-columns: 1fr;
   }
+}
+.hidden-file {
+  display: none;
+}
+
+.tpl-files {
+  padding: 14px 16px 4px;
+  border-top: 1px solid var(--border);
+}
+
+/* 已绑定模块：60+ 个模块时限制高度，避免卡片无限拉长 */
+.bind-scroll {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.bind-link {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.bind-link:hover {
+  text-decoration: underline;
+}
+
+/* 下发到模块对话框 */
+.dist-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dist-tpl {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dist-tpl-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dist-tpl-meta {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.dist-modes {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+}
+
+.dist-mode {
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.dist-mode:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.dist-mode.on {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--sh-1);
+}
+
+.dist-mode:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dist-warn {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--warn-50);
+  font-size: 12.5px;
+  color: var(--warn);
+}
+
+.env-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.field-hint {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+
+.tpl-files-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.file-def-table {
+  border-top: 1px solid var(--border);
+}
+
+.bind-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 10px;
+}
+
+.bind-table {
+  margin-top: 4px;
+}
+
+.bind-table :deep(td) {
+  padding-top: 7px;
+  padding-bottom: 7px;
 }
 </style>
