@@ -1,5 +1,7 @@
 # fcloud-ci-manager
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > 面向 CI 流水线的配置分发中心。
 > 本文件是《fcloud-ci-manager 设计与决策书（最终版）》的执行记录与补充决策说明。
 
@@ -699,3 +701,11 @@ bash .dsh-tmp/m2-check.sh             # M2 验收脚本
 - 本机未部署 GitLab，`FCLOUD_GITLAB_BASE_URL` 仅作 OAuth 客户端配置占位，
   不影响除登录外的接口验证；M2 的登录链路用 `fcloud.dev-login-enabled=true`
   的 `/dev-login` 模拟入口验证（默认关闭，生产镜像不启用）。
+
+---
+
+## 11. 开源协议
+
+本项目采用 [MIT License](LICENSE) 开源。
+
+Copyright (c) 2026 AstbReal
